@@ -1,6 +1,6 @@
 # postgres-query-mcp
 
-一个面向 Codex / ChatGPT 的 PostgreSQL MCP 服务端，核心目标是：
+一个面向 Codex / OpenCode / ChatGPT 的 PostgreSQL MCP 服务端，核心目标是：
 
 - 无状态：每次调用都显式传入 `connection_id`
 - 默认只读：只暴露 schema 浏览、表结构、只读查询、`EXPLAIN`
@@ -19,23 +19,17 @@
 
 ## 安装
 
-运行这个 MCP 需要 `Python 3.10+`。当前官方 `mcp` Python SDK 在 PyPI 上不支持 `Python 3.9`。
+运行这个 MCP 需要 `Python 3.10+`。
 
 ```bash
 cd postgres-query-mcp
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install .
-```
-
-如果你本机的 `pip` 已经比较新，也可以改成可编辑安装：
-
-```bash
 pip install -e .
 ```
 
-## 配置
+## 通用配置
 
 1. 复制示例配置：
 
@@ -46,41 +40,53 @@ cp config/connections.example.json config/connections.json
 2. 在环境变量里配置真实 DSN：
 
 ```bash
-export PG_CONN_CRM_PROD_MUQIAO_RO='postgresql://user:password@host:5432/dbname'
-export PG_CONN_CRM_UAT_MUQIAO_RO='postgresql://user:password@host:5432/dbname'
+export PG_CONN_CRM_PROD_MAIN_RO='postgresql://user:password@host:5432/dbname'
 ```
 
-3. 按需修改 `config/connections.json`，为每个连接定义 `connection_id`、标签和默认 schema。
+3. 在 `config/connections.json` 中声明连接：
 
-也可以通过环境变量指定配置文件：
-
-```bash
-export PG_QUERY_MCP_CONFIG=/absolute/path/to/connections.json
+```json
+{
+  "settings": {
+    "default_limit": 200,
+    "max_limit": 1000,
+    "statement_timeout_ms": 15000,
+    "audit_log_path": "logs/audit.jsonl"
+  },
+  "connections": [
+    {
+      "connection_id": "crm_prod_main_ro",
+      "label": "CRM 生产库 / 只读",
+      "env": "prod",
+      "tenant": "main",
+      "role": "ro",
+      "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
+      "enabled": true,
+      "default_schemas": ["public"]
+    }
+  ]
+}
 ```
 
-## 运行
+说明：
 
-默认使用 stdio transport：
+- `connection_id` 必须符合 `<system>_<env>_<tenant>_<role>` 风格，例如 `crm_prod_main_ro`
+- `dsn_env` 填的是环境变量名，不是真实连接串
+- `default_schemas` 通常填 `["public"]`
+- 也可以通过 `PG_QUERY_MCP_CONFIG` 指向自定义配置文件路径
 
-```bash
-cd postgres-query-mcp
-source .venv/bin/activate
-postgres-query-mcp
-```
+## 客户端接入
 
-或：
+README 只保留概要说明，详细安装与接入步骤请看：
 
-```bash
-python -m postgres_query_mcp
-```
+- [Codex 接入说明](docs/codex-setup.md)
+- [OpenCode 接入说明](docs/opencode-setup.md)
 
 ## 交互示例
 
-面向模型的表达建议统一为：
-
-- 用 `postgres-query-mcp` 的 `crm_prod_muqiao_ro` 连接，列出 `public` 下的表
-- 用 `postgres-query-mcp` 的 `crm_uat_muqiao_ro` 连接，查看 `orders` 表结构
-- 用 `postgres-query-mcp` 的 `pv_prod_demo_ro` 连接，执行只读查询：统计最近 7 天每日新增用户数
+- 用 `postgres-query-mcp` 的 `crm_prod_main_ro` 连接，列出 `public` 下的表
+- 用 `postgres-query-mcp` 的 `crm_prod_main_ro` 连接，查看 `orders` 表结构
+- 用 `postgres-query-mcp` 的 `crm_prod_main_ro` 连接，执行只读查询：统计最近 7 天每日新增用户数
 
 ## 安全限制
 
@@ -92,8 +98,6 @@ python -m postgres_query_mcp
 - 审计日志输出到 `logs/audit.jsonl`
 
 ## 测试
-
-当前包含纯单元测试，覆盖配置解析和 SQL 校验逻辑：
 
 ```bash
 cd postgres-query-mcp
