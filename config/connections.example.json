@@ -1,0 +1,34 @@
+{
+  "settings": {
+    "default_limit": 200,
+    "max_limit": 1000,
+    "statement_timeout_ms": 15000,
+    "audit_log_path": "logs/audit.jsonl"
+  },
+  "connections": [
+    {
+      "connection_id": "crm_prod_muqiao_ro",
+      "label": "CRM 生产库 / 穆桥 / 只读",
+      "env": "prod",
+      "tenant": "muqiao",
+      "role": "ro",
+      "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+      "enabled": true,
+      "default_schemas": [
+        "public"
+      ]
+    },
+    {
+      "connection_id": "crm_uat_muqiao_ro",
+      "label": "CRM UAT / 穆桥 / 只读",
+      "env": "uat",
+      "tenant": "muqiao",
+      "role": "ro",
+      "dsn_env": "PG_CONN_CRM_UAT_MUQIAO_RO",
+      "enabled": true,
+      "default_schemas": [
+        "public"
+      ]
+    }
+  ]
+}
