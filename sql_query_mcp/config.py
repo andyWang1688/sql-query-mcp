@@ -1,21 +1,22 @@
-"""Configuration loading for postgres-query-mcp."""
+"""Configuration loading for sql-query-mcp."""
 
 from __future__ import annotations
 
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Optional
 
 from .errors import ConfigurationError
 
 PACKAGE_ROOT = Path(__file__).resolve().parent.parent
-DEFAULT_CONFIG_ENV = "PG_QUERY_MCP_CONFIG"
+DEFAULT_CONFIG_ENV = "SQL_QUERY_MCP_CONFIG"
 DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "connections.json"
 DEFAULT_AUDIT_LOG_PATH = PACKAGE_ROOT / "logs" / "audit.jsonl"
 CONNECTION_ID_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+){3,}$")
+SUPPORTED_ENGINES = {"postgres", "mysql"}
 
 
 @dataclass(frozen=True)
@@ -29,25 +30,29 @@ class ServerSettings:
 @dataclass(frozen=True)
 class ConnectionConfig:
     connection_id: str
+    engine: str
     env: str
     tenant: str
     role: str
     dsn_env: str
     enabled: bool = True
-    default_schemas: List[str] = field(default_factory=lambda: ["public"])
     label: Optional[str] = None
     description: Optional[str] = None
+    default_schema: Optional[str] = None
+    default_database: Optional[str] = None
 
     @property
     def summary(self) -> Dict[str, object]:
         return {
             "connection_id": self.connection_id,
+            "engine": self.engine,
             "label": self.label or self.connection_id,
             "env": self.env,
             "tenant": self.tenant,
             "role": self.role,
             "enabled": self.enabled,
-            "default_schemas": list(self.default_schemas),
+            "default_schema": self.default_schema,
+            "default_database": self.default_database,
             "description": self.description,
         }
 
@@ -89,11 +94,10 @@ def _parse_settings(data: Dict[str, object], path: Path) -> ServerSettings:
     default_limit = int(data.get("default_limit", 200))
     max_limit = int(data.get("max_limit", 1000))
     statement_timeout_ms = int(data.get("statement_timeout_ms", 15000))
-    audit_log_raw = data.get("audit_log_path")
-    if audit_log_raw:
-        audit_log_path = (path.parent / str(audit_log_raw)).resolve()
-    else:
-        audit_log_path = DEFAULT_AUDIT_LOG_PATH
+    audit_log_raw = str(data.get("audit_log_path", DEFAULT_AUDIT_LOG_PATH.relative_to(PACKAGE_ROOT)))
+    audit_log_path = Path(audit_log_raw)
+    if not audit_log_path.is_absolute():
+        audit_log_path = (path.parent / audit_log_path).resolve()
 
     if default_limit <= 0:
         raise ConfigurationError("default_limit 必须大于 0")
@@ -121,10 +125,15 @@ def _parse_connections(items: object) -> List[ConnectionConfig]:
             raise ConfigurationError("connections 数组中的每一项都必须是对象")
 
         connection_id = str(item.get("connection_id", "")).strip()
+        engine = str(item.get("engine", "")).strip()
+        label = _required_string(item, "label", connection_id or "connection")
+        enabled = _required_bool(item, "enabled", connection_id or "connection")
         if not CONNECTION_ID_RE.match(connection_id):
             raise ConfigurationError(
                 "connection_id 必须符合 <system>_<env>_<tenant>_<role> 风格，且只包含小写字母、数字、下划线"
             )
+        if engine not in SUPPORTED_ENGINES:
+            raise ConfigurationError(f"{connection_id} 缺少合法 engine，必须是 postgres 或 mysql")
         if connection_id in seen:
             raise ConfigurationError(f"重复的 connection_id: {connection_id}")
         seen.add(connection_id)
@@ -138,22 +147,63 @@ def _parse_connections(items: object) -> List[ConnectionConfig]:
                 f"{connection_id} 缺少必要字段，必须提供 env / tenant / role / dsn_env"
             )
 
-        schemas = item.get("default_schemas") or ["public"]
-        if not isinstance(schemas, list) or not all(isinstance(value, str) and value for value in schemas):
-            raise ConfigurationError(f"{connection_id} 的 default_schemas 必须是非空字符串数组")
+        _reject_legacy_namespace_fields(item, connection_id)
+        default_schema = _optional_string(item.get("default_schema"))
+        default_database = _optional_string(item.get("default_database"))
+
+        if engine == "postgres" and "default_database" in item:
+            raise ConfigurationError(f"{connection_id} 是 PostgreSQL 连接，不能配置 default_database")
+        if engine == "mysql" and "default_schema" in item:
+            raise ConfigurationError(f"{connection_id} 是 MySQL 连接，不能配置 default_schema")
 
         result.append(
             ConnectionConfig(
                 connection_id=connection_id,
-                label=(str(item["label"]).strip() if item.get("label") else None),
+                engine=engine,
+                label=label,
                 description=(str(item["description"]).strip() if item.get("description") else None),
                 env=env,
                 tenant=tenant,
                 role=role,
                 dsn_env=dsn_env,
-                enabled=bool(item.get("enabled", True)),
-                default_schemas=[value.strip() for value in schemas],
+                enabled=enabled,
+                default_schema=default_schema,
+                default_database=default_database,
             )
         )
 
     return result
+
+
+def _reject_legacy_namespace_fields(item: Dict[str, object], connection_id: str) -> None:
+    if "default_namespace" in item:
+        raise ConfigurationError(
+            f"{connection_id} 仍在使用 default_namespace，请改为 default_schema 或 default_database"
+        )
+    if "default_schemas" in item:
+        raise ConfigurationError(
+            f"{connection_id} 仍在使用 default_schemas，请收敛为单值字段 default_schema"
+        )
+
+
+def _optional_string(value: object) -> Optional[str]:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def _required_string(item: Dict[str, object], field_name: str, connection_id: str) -> str:
+    value = _optional_string(item.get(field_name))
+    if value is None:
+        raise ConfigurationError(f"{connection_id} 缺少必要字段 {field_name}")
+    return value
+
+
+def _required_bool(item: Dict[str, object], field_name: str, connection_id: str) -> bool:
+    if field_name not in item:
+        raise ConfigurationError(f"{connection_id} 缺少必要字段 {field_name}")
+    value = item[field_name]
+    if not isinstance(value, bool):
+        raise ConfigurationError(f"{connection_id} 的 {field_name} 必须是布尔值")
+    return value

@@ -1,11 +1,11 @@
 # OpenCode 接入说明
 
-本文说明如何把 `postgres-query-mcp` 接入 OpenCode。
+本文说明如何把 `sql-query-mcp` 接入 OpenCode。
 
 ## 1. 安装 MCP 服务
 
 ```bash
-cd /absolute/path/to/postgres-query-mcp
+cd /absolute/path/to/sql-query-mcp
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -15,7 +15,7 @@ pip install -e .
 安装完成后，可执行文件通常位于：
 
 ```bash
-/absolute/path/to/postgres-query-mcp/.venv/bin/postgres-query-mcp
+/absolute/path/to/sql-query-mcp/.venv/bin/sql-query-mcp
 ```
 
 ## 2. 准备连接配置
@@ -39,13 +39,25 @@ cp config/connections.example.json config/connections.json
   "connections": [
     {
       "connection_id": "crm_prod_main_ro",
-      "label": "CRM 生产库 / 只读",
+      "engine": "postgres",
+      "label": "CRM PostgreSQL 生产库 / 只读",
       "env": "prod",
       "tenant": "main",
       "role": "ro",
       "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
-      "default_schemas": ["public"]
+      "default_schema": "public"
+    },
+    {
+      "connection_id": "crm_mysql_prod_main_ro",
+      "engine": "mysql",
+      "label": "CRM MySQL 生产库 / 只读",
+      "env": "prod",
+      "tenant": "main",
+      "role": "ro",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
+      "enabled": true,
+      "default_database": "crm"
     }
   ]
 }
@@ -55,7 +67,13 @@ cp config/connections.example.json config/connections.json
 
 ```bash
 export PG_CONN_CRM_PROD_MAIN_RO='postgresql://username:password@host:5432/dbname'
+export MYSQL_CONN_CRM_PROD_MAIN_RO='mysql://username:password@host:3306/crm'
 ```
+
+补充说明：
+
+- `engine` 必须显式写在 `connections.json` 里，服务端不会从 `connection_id` 推断数据库类型
+- `connection_id` 推荐保持稳定的下划线命名；如需区分同类不同连接，可以增加额外段，但不要依赖其中的 `pg/mysql` 字样做路由
 
 ## 3. 在 OpenCode 中注册 MCP
 
@@ -71,16 +89,16 @@ export PG_CONN_CRM_PROD_MAIN_RO='postgresql://username:password@host:5432/dbname
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "postgres_query_mcp": {
+    "sql_query_mcp": {
       "type": "local",
       "command": [
-        "/absolute/path/to/postgres-query-mcp/.venv/bin/postgres-query-mcp"
+        "/absolute/path/to/sql-query-mcp/.venv/bin/sql-query-mcp"
       ],
       "enabled": true,
       "environment": {
-        "PG_QUERY_MCP_CONFIG": "/absolute/path/to/postgres-query-mcp/config/connections.json",
+        "SQL_QUERY_MCP_CONFIG": "/absolute/path/to/sql-query-mcp/config/connections.json",
         "PG_CONN_CRM_PROD_MAIN_RO": "postgresql://username:password@host:5432/dbname",
-        "PG_CONN_CRM_UAT_MAIN_RO": "postgresql://username:password@host:5432/dbname"
+        "MYSQL_CONN_CRM_PROD_MAIN_RO": "mysql://username:password@host:3306/crm"
       }
     }
   }
@@ -102,10 +120,11 @@ export PG_CONN_CRM_PROD_MAIN_RO='postgresql://username:password@host:5432/dbname
 
 你可以直接这样说：
 
-- 使用 `postgres_query_mcp` 工具，列出 `crm_prod_main_ro` 的 schema
-- 使用 `postgres_query_mcp` 工具，查看 `crm_prod_main_ro` 下 `public.orders` 的字段信息
-- 使用 `postgres_query_mcp` 工具，执行查询：`select count(*) from orders`
-- 使用 `postgres_query_mcp` 工具，对这条 SQL 做执行计划分析：`select * from orders where created_at >= now() - interval '7 days'`
+- 使用 `sql_query_mcp` 工具，列出 `crm_prod_main_ro` 的 schema
+- 使用 `sql_query_mcp` 工具，查看 `crm_prod_main_ro` 下 `public.orders` 的字段信息
+- 使用 `sql_query_mcp` 工具，列出 `crm_mysql_prod_main_ro` 的 database
+- 使用 `sql_query_mcp` 工具，查看 `crm_mysql_prod_main_ro` 下 `crm.orders` 的字段信息
+- 使用 `sql_query_mcp` 工具，执行查询：`select count(*) from orders`
 
 ## 常见问题
 
@@ -115,7 +134,7 @@ export PG_CONN_CRM_PROD_MAIN_RO='postgresql://username:password@host:5432/dbname
 
 - `~/.config/opencode/opencode.json` 是否是合法 JSON
 - `command` 路径是否可执行
-- `environment` 中的 `PG_QUERY_MCP_CONFIG` 是否指向正确文件
+- `environment` 中的 `SQL_QUERY_MCP_CONFIG` 是否指向正确文件
 
 ### 连接存在但查询报错
 

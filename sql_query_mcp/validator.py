@@ -38,11 +38,6 @@ def build_limited_query(sql: str, row_limit: int) -> Tuple[str, int]:
     return wrapped, sentinel_limit
 
 
-def build_explain_query(sql: str, analyze: bool = False) -> str:
-    options = ["FORMAT JSON", f"ANALYZE {'TRUE' if analyze else 'FALSE'}"]
-    return f"EXPLAIN ({', '.join(options)}) {sql}"
-
-
 def summarize_sql(sql: str, max_chars: int = 160) -> str:
     one_line = re.sub(r"\s+", " ", sql).strip()
     if len(one_line) <= max_chars:

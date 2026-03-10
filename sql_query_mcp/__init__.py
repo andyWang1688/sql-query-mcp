@@ -1,4 +1,4 @@
-"""postgres-query-mcp package."""
+"""sql-query-mcp package."""
 
 __all__ = ["__version__"]
 

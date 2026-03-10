@@ -1,14 +1,12 @@
 from __future__ import annotations
 
+import json
 import unittest
 
-from postgres_query_mcp.errors import SecurityError
-from postgres_query_mcp.validator import (
-    build_explain_query,
-    build_limited_query,
-    clamp_limit,
-    validate_select_sql,
-)
+from sql_query_mcp.validator import build_limited_query, clamp_limit, validate_select_sql
+from sql_query_mcp.adapters.mysql import MySQLAdapter
+from sql_query_mcp.adapters.postgres import PostgresAdapter
+from sql_query_mcp.errors import SecurityError
 
 
 class ValidatorTestCase(unittest.TestCase):
@@ -35,10 +33,67 @@ class ValidatorTestCase(unittest.TestCase):
         self.assertIn("SELECT * FROM (SELECT * FROM users)", query)
         self.assertEqual(201, sentinel_limit)
 
-    def test_build_explain_query_uses_format_json(self) -> None:
-        explain_sql = build_explain_query("SELECT 1", analyze=False)
+    def test_postgres_explain_uses_format_json(self) -> None:
+        explain_sql = PostgresAdapter().build_explain_query("SELECT 1", analyze=False)
         self.assertIn("FORMAT JSON", explain_sql)
         self.assertIn("ANALYZE FALSE", explain_sql)
+
+    def test_mysql_explain_uses_format_json(self) -> None:
+        explain_sql = MySQLAdapter().build_explain_query("SELECT 1", analyze=False)
+        self.assertEqual("EXPLAIN FORMAT=JSON SELECT 1", explain_sql)
+
+    def test_mysql_explain_rejects_analyze(self) -> None:
+        with self.assertRaises(SecurityError):
+            MySQLAdapter().build_explain_query("SELECT 1", analyze=True)
+
+    def test_mysql_explain_plan_is_parsed_to_structured_json(self) -> None:
+        plan = MySQLAdapter().extract_plan(
+            [{"EXPLAIN": json.dumps({"query_block": {"select_id": 1}})}]
+        )
+        self.assertEqual({"query_block": {"select_id": 1}}, plan)
+
+    def test_mysql_indexes_are_normalized(self) -> None:
+        indexes = MySQLAdapter()._normalize_indexes(
+            [
+                {
+                    "index_name": "PRIMARY",
+                    "non_unique": 0,
+                    "seq_in_index": 1,
+                    "column_name": "id",
+                },
+                {
+                    "index_name": "idx_orders_status_created_at",
+                    "non_unique": 1,
+                    "seq_in_index": 1,
+                    "column_name": "status",
+                },
+                {
+                    "index_name": "idx_orders_status_created_at",
+                    "non_unique": 1,
+                    "seq_in_index": 2,
+                    "column_name": "created_at",
+                },
+            ]
+        )
+        self.assertEqual(
+            [
+                {
+                    "index_name": "PRIMARY",
+                    "columns": ["id"],
+                    "unique": True,
+                    "primary_key": True,
+                    "definition": None,
+                },
+                {
+                    "index_name": "idx_orders_status_created_at",
+                    "columns": ["status", "created_at"],
+                    "unique": False,
+                    "primary_key": False,
+                    "definition": None,
+                },
+            ],
+            indexes,
+        )
 
 
 if __name__ == "__main__":

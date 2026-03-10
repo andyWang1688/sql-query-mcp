@@ -3,20 +3,21 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "postgres-query-mcp"
+name = "sql-query-mcp"
 version = "0.1.0"
-description = "A stateless PostgreSQL MCP server with connection_id-based routing."
+description = "A stateless SQL MCP server with connection_id-based routing."
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
   "mcp>=1.12.4",
+  "PyMySQL>=1.1",
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
 ]
 
 [project.scripts]
-postgres-query-mcp = "postgres_query_mcp.app:main"
+sql-query-mcp = "sql_query_mcp.app:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["postgres_query_mcp*"]
+include = ["sql_query_mcp*"]

@@ -1,27 +1,27 @@
-"""Error types for postgres-query-mcp."""
+"""Error types for sql-query-mcp."""
 
 from __future__ import annotations
 
 import re
 
 
-class PostgresQueryMCPError(Exception):
+class SqlQueryMCPError(Exception):
     """Base error for this package."""
 
 
-class ConfigurationError(PostgresQueryMCPError):
+class ConfigurationError(SqlQueryMCPError):
     """Raised when local configuration is invalid."""
 
 
-class ConnectionNotFoundError(PostgresQueryMCPError):
+class ConnectionNotFoundError(SqlQueryMCPError):
     """Raised when the requested connection_id does not exist."""
 
 
-class SecurityError(PostgresQueryMCPError):
+class SecurityError(SqlQueryMCPError):
     """Raised when SQL validation rejects a query."""
 
 
-class QueryExecutionError(PostgresQueryMCPError):
+class QueryExecutionError(SqlQueryMCPError):
     """Raised when the database execution layer fails."""
 
 

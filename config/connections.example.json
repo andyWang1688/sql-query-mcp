@@ -8,27 +8,25 @@
   "connections": [
     {
       "connection_id": "crm_prod_muqiao_ro",
-      "label": "CRM 生产库 / 穆桥 / 只读",
+      "engine": "postgres",
+      "label": "CRM PostgreSQL 生产库 / 穆桥 / 只读",
       "env": "prod",
       "tenant": "muqiao",
       "role": "ro",
       "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
       "enabled": true,
-      "default_schemas": [
-        "public"
-      ]
+      "default_schema": "public"
     },
     {
-      "connection_id": "crm_uat_muqiao_ro",
-      "label": "CRM UAT / 穆桥 / 只读",
-      "env": "uat",
+      "connection_id": "crm_mysql_prod_muqiao_ro",
+      "engine": "mysql",
+      "label": "CRM MySQL 生产库 / 穆桥 / 只读",
+      "env": "prod",
       "tenant": "muqiao",
       "role": "ro",
-      "dsn_env": "PG_CONN_CRM_UAT_MUQIAO_RO",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MUQIAO_RO",
       "enabled": true,
-      "default_schemas": [
-        "public"
-      ]
+      "default_database": "crm"
     }
   ]
 }
