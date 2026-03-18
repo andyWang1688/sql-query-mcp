@@ -1,8 +1,21 @@
 # OpenCode 接入说明
 
-本文说明如何把 `sql-query-mcp` 接入 OpenCode。
+本文说明如何把 `sql-query-mcp` 注册到 OpenCode。它聚焦在配置和排查步骤；
+如果你需要了解项目设计和 tool 行为，可以分别查看
+`docs/project-overview.md` 和 `docs/api-reference.md`。
 
-## 1. 安装 MCP 服务
+## 准备内容
+
+开始前，请先确认你已经具备本地运行 MCP 服务的基础条件。
+
+- Python 3.10+
+- `sql-query-mcp` 仓库本地副本
+- PostgreSQL 或 MySQL 只读账号
+- 可编辑的 `~/.config/opencode/opencode.json`
+
+## 第一步：安装服务
+
+先在本地仓库中创建虚拟环境并安装项目。
 
 ```bash
 cd /absolute/path/to/sql-query-mcp
@@ -12,21 +25,21 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
-安装完成后，可执行文件通常位于：
+安装完成后，可执行文件通常位于以下路径。
 
 ```bash
 /absolute/path/to/sql-query-mcp/.venv/bin/sql-query-mcp
 ```
 
-## 2. 准备连接配置
+## 第二步：准备连接配置
 
-复制示例文件：
+服务默认读取 `config/connections.json`。你可以从示例文件开始。
 
 ```bash
 cp config/connections.example.json config/connections.json
 ```
 
-最小示例：
+下面是一个最小配置示例。
 
 ```json
 {
@@ -39,7 +52,7 @@ cp config/connections.example.json config/connections.json
     {
       "connection_id": "crm_prod_main_ro",
       "engine": "postgres",
-      "label": "CRM PostgreSQL 生产库 / 只读",
+      "label": "CRM PostgreSQL production read-only",
       "env": "prod",
       "tenant": "main",
       "role": "ro",
@@ -50,7 +63,7 @@ cp config/connections.example.json config/connections.json
     {
       "connection_id": "crm_mysql_prod_main_ro",
       "engine": "mysql",
-      "label": "CRM MySQL 生产库 / 只读",
+      "label": "CRM MySQL production read-only",
       "env": "prod",
       "tenant": "main",
       "role": "ro",
@@ -62,7 +75,8 @@ cp config/connections.example.json config/connections.json
 }
 ```
 
-如果你要为这个 MCP 服务单独覆盖数据库执行超时，可以额外加上：
+如果你希望单独限制数据库执行时间，可以在 `settings` 中增加
+`statement_timeout_ms`。
 
 ```json
 {
@@ -72,34 +86,29 @@ cp config/connections.example.json config/connections.json
 }
 ```
 
-说明：
+这个超时作用在数据库会话层，不是 OpenCode 自己的会话超时。
 
-- `statement_timeout_ms` 是数据库会话级执行超时，不是 OpenCode 的客户端请求超时
-- 不配置或显式设为 `null` 时，服务端不会下发超时设置，直接沿用数据库默认值
-- 客户端超时和数据库执行超时是两层配置，需要分别设置
+## 第三步：准备环境变量
 
-准备对应 DSN 环境变量值：
+`connections.json` 只存环境变量名，因此你还需要准备真实 DSN 和配置路径。
 
 ```bash
 export PG_CONN_CRM_PROD_MAIN_RO='postgresql://username:password@host:5432/dbname'
 export MYSQL_CONN_CRM_PROD_MAIN_RO='mysql://username:password@host:3306/crm'
+export SQL_QUERY_MCP_CONFIG='/absolute/path/to/sql-query-mcp/config/connections.json'
 ```
 
-补充说明：
+请保持下面这些规则一致。
 
-- `engine` 必须显式写在 `connections.json` 里，服务端不会从 `connection_id` 推断数据库类型
-- `connection_id` 推荐保持稳定的下划线命名；如需区分同类不同连接，可以增加额外段，但不要依赖其中的 `pg/mysql` 字样做路由
-- SQL 校验基于 `sqlglot` 语义解析，只接受只读 `SELECT` / `WITH ... SELECT`，不会因为字符串字面量里出现 `call`、`delete` 之类的单词而误拦截
+- `engine` 必须显式配置
+- PostgreSQL 使用 `schema`
+- MySQL 使用 `database`
+- `dsn_env` 必须和真实环境变量名一致
 
-## 3. 在 OpenCode 中注册 MCP
+## 第四步：注册到 OpenCode
 
-根据 OpenCode 官方文档，全局配置文件放在：
-
-```bash
-~/.config/opencode/opencode.json
-```
-
-在这个文件中加入：
+OpenCode 的全局配置文件通常位于 `~/.config/opencode/opencode.json`。在文件
+中加入下面这段 MCP 配置。
 
 ```json
 {
@@ -121,41 +130,60 @@ export MYSQL_CONN_CRM_PROD_MAIN_RO='mysql://username:password@host:3306/crm'
 }
 ```
 
-说明：
+如果你的 `opencode.json` 已经包含其他字段，只合并 `mcp` 节点即可，不要整
+个文件覆盖。
 
-- `type: "local"` 表示 OpenCode 启动本地 MCP 进程
-- `command` 是命令数组，第一项就是可执行文件路径
-- `environment` 用于传入配置文件路径和真实 DSN
-- 如果你的 `opencode.json` 已经有别的配置项，只需要把 `mcp` 这一段合并进去，不要整文件覆盖
+## 第五步：重启 OpenCode
 
-## 4. 重启 OpenCode
+保存配置后，重启 OpenCode 或新开会话，让 MCP 服务重新加载。
 
-保存 `~/.config/opencode/opencode.json` 后，重启 OpenCode 或新开会话。
+## 第六步：验证接入
 
-## 5. 在对话中使用
+建议先跑一组最小验证动作，确认注册、连接和权限都正常。
 
-你可以直接这样说：
+- 查看可用连接
+- 列出 PostgreSQL schema 或 MySQL database
+- 查看某张业务表的结构
+- 对一个简单查询执行只读测试
+
+你可以用自然语言提示 OpenCode，例如：
 
 - 使用 `sql_query_mcp` 工具，列出 `crm_prod_main_ro` 的 schema
-- 使用 `sql_query_mcp` 工具，查看 `crm_prod_main_ro` 下 `public.orders` 的字段信息
-- 使用 `sql_query_mcp` 工具，列出 `crm_mysql_prod_main_ro` 的 database
 - 使用 `sql_query_mcp` 工具，查看 `crm_mysql_prod_main_ro` 下 `crm.orders` 的字段信息
 - 使用 `sql_query_mcp` 工具，执行查询：`select count(*) from orders`
 
 ## 常见问题
 
+如果 OpenCode 没有正常加载 MCP，优先从配置文件合法性、路径和环境变量三类
+问题入手排查。
+
 ### OpenCode 没有加载到 MCP
 
-优先检查：
+如果 UI 中根本没有看到 MCP 服务，通常是配置没有被正确解析。
 
 - `~/.config/opencode/opencode.json` 是否是合法 JSON
-- `command` 路径是否可执行
-- `environment` 中的 `SQL_QUERY_MCP_CONFIG` 是否指向正确文件
+- `command` 第一项是否指向真实可执行文件
+- `enabled` 是否为 `true`
 
 ### 连接存在但查询报错
 
-优先检查：
+如果服务已加载，但查询失败，优先检查连接配置和数据库权限。
 
-- `connections.json` 中的 `dsn_env` 和 `environment` 里的变量名是否一致
-- 对应数据库账号是否真的有只读权限
-- SQL 是否违反了当前服务的只读限制
+- `dsn_env` 和 `environment` 中的变量名是否完全一致
+- 对应数据库账号是否具备目标 schema 或 database 的只读权限
+- 是否把 PostgreSQL 的 `schema` 和 MySQL 的 `database` 用反了
+
+### 查询被安全规则拦截
+
+如果提示 SQL 不被允许，说明服务在按设计保护数据库。
+
+- 不允许注释和多语句
+- 不允许写操作和事务语句
+- `EXPLAIN` 需要走 `explain_query`
+
+## Next steps
+
+如果 OpenCode 已经接入成功，建议继续阅读下面两个文档。
+
+1. `docs/api-reference.md`
+2. `docs/project-overview.md`
