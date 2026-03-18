@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
-from typing import Iterator, Tuple
+from typing import Any, Iterator, Tuple
 
 from .adapters import MySQLAdapter, PostgresAdapter
 from .config import AppConfig, ConnectionConfig
@@ -28,19 +28,25 @@ class ConnectionRegistry:
         try:
             config = self._config.connection_map[connection_id]
         except KeyError as exc:
-            raise ConnectionNotFoundError(f"未知 connection_id: {connection_id}") from exc
+            raise ConnectionNotFoundError(
+                f"未知 connection_id: {connection_id}"
+            ) from exc
         if not config.enabled:
             raise ConnectionNotFoundError(f"connection_id 已被禁用: {connection_id}")
         return config
 
     @contextmanager
-    def connection(self, connection_id: str) -> Iterator[Tuple[object, ConnectionConfig, object]]:
+    def connection(
+        self, connection_id: str
+    ) -> Iterator[Tuple[Any, ConnectionConfig, Any]]:
         config = self.get_connection_config(connection_id)
         with self.connection_from_config(config) as (conn, adapter):
             yield conn, config, adapter
 
     @contextmanager
-    def connection_from_config(self, config: ConnectionConfig) -> Iterator[Tuple[object, object]]:
+    def connection_from_config(
+        self, config: ConnectionConfig
+    ) -> Iterator[Tuple[Any, Any]]:
         dsn = os.environ.get(config.dsn_env)
         if not dsn:
             raise ConfigurationError(

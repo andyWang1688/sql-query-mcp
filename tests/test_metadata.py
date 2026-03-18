@@ -16,9 +16,10 @@ class _AdapterStub:
     def __init__(self) -> None:
         self.list_tables_calls = []
         self.describe_table_calls = []
+        self.set_statement_timeout_calls = []
 
     def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
-        return None
+        self.set_statement_timeout_calls.append(timeout_ms)
 
     def list_schemas(self, conn: object):
         return ["public"]
@@ -55,6 +56,61 @@ class _RegistryStub:
 
 
 class MetadataServiceTestCase(unittest.TestCase):
+    def test_list_tables_skips_statement_timeout_when_unset(self) -> None:
+        config = ConnectionConfig(
+            connection_id="crm_prod_main_ro",
+            engine="postgres",
+            label="CRM PG",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="PG_CONN",
+            enabled=True,
+            default_schema="public",
+        )
+        adapter = _AdapterStub()
+        registry = _RegistryStub(config, adapter)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = MetadataService(
+                registry=registry,
+                settings=ServerSettings(
+                    statement_timeout_ms=None,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = service.list_tables(config.connection_id)
+
+        self.assertEqual([], adapter.set_statement_timeout_calls)
+        self.assertEqual("public", result["schema"])
+
+    def test_list_tables_sets_statement_timeout_when_configured(self) -> None:
+        config = ConnectionConfig(
+            connection_id="crm_prod_main_ro",
+            engine="postgres",
+            label="CRM PG",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="PG_CONN",
+            enabled=True,
+            default_schema="public",
+        )
+        adapter = _AdapterStub()
+        registry = _RegistryStub(config, adapter)
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = MetadataService(
+                registry=registry,
+                settings=ServerSettings(
+                    statement_timeout_ms=2500,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            service.list_tables(config.connection_id)
+
+        self.assertEqual([2500], adapter.set_statement_timeout_calls)
+
     def test_list_schemas_rejects_mysql_connections(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_prod_main_ro",

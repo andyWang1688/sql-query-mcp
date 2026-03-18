@@ -13,14 +13,66 @@ from sql_query_mcp.executor import QueryExecutor
 
 
 class _SampleAdapter:
-    def build_sample_query(self, namespace: str, table_name: str, sentinel_limit: int) -> str:
+    def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
+        return None
+
+    def build_sample_query(
+        self, namespace: str, table_name: str, sentinel_limit: int
+    ) -> str:
         return f"SELECT * FROM {namespace}.{table_name} LIMIT {sentinel_limit}"
 
 
+class _CursorStub:
+    def __init__(self, rows, description=None) -> None:
+        self._rows = rows
+        self.description = description or ["id"]
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    def fetchall(self):
+        return self._rows
+
+
+class _ConnectionStub:
+    def __init__(self, cursor: _CursorStub) -> None:
+        self._cursor = cursor
+
+    def cursor(self) -> _CursorStub:
+        return self._cursor
+
+
+class _QueryAdapterStub:
+    def __init__(self) -> None:
+        self.set_statement_timeout_calls = []
+
+    def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
+        self.set_statement_timeout_calls.append(timeout_ms)
+
+    def column_names(self, description):
+        return list(description)
+
+    def build_explain_query(self, sql_text: str, analyze: bool = False) -> str:
+        return f"EXPLAIN {sql_text}"
+
+    def extract_plan(self, rows):
+        return rows
+
+
 class _RegistryStub:
-    def __init__(self, config: ConnectionConfig, adapter: object) -> None:
+    def __init__(
+        self, config: ConnectionConfig, adapter: object, conn: object = None
+    ) -> None:
         self._config = config
         self._adapter = adapter
+        self._conn = conn if conn is not None else object()
         self.connection_calls = 0
 
     def get_connection_config(self, connection_id: str) -> ConnectionConfig:
@@ -38,10 +90,68 @@ class _RegistryStub:
         if config != self._config:
             raise AssertionError(config)
         self.connection_calls += 1
-        yield object(), self._adapter
+        yield self._conn, self._adapter
 
 
 class QueryExecutorValidationTestCase(unittest.TestCase):
+    def test_run_select_does_not_set_statement_timeout_when_unset(self) -> None:
+        config = ConnectionConfig(
+            connection_id="crm_prod_main_ro",
+            engine="postgres",
+            label="CRM PG",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="PG_CONN",
+            enabled=True,
+            default_schema="public",
+        )
+        cursor = _CursorStub(rows=[{"id": 1}])
+        adapter = _QueryAdapterStub()
+        registry = _RegistryStub(config, adapter, conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(
+                    statement_timeout_ms=None,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.run_select(config.connection_id, "SELECT 1")
+
+        self.assertEqual([], adapter.set_statement_timeout_calls)
+        self.assertEqual(["id"], result["columns"])
+        self.assertEqual(1, result["row_count"])
+
+    def test_run_select_sets_statement_timeout_when_configured(self) -> None:
+        config = ConnectionConfig(
+            connection_id="crm_prod_main_ro",
+            engine="postgres",
+            label="CRM PG",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="PG_CONN",
+            enabled=True,
+            default_schema="public",
+        )
+        cursor = _CursorStub(rows=[{"id": 1}])
+        adapter = _QueryAdapterStub()
+        registry = _RegistryStub(config, adapter, conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(
+                    statement_timeout_ms=2500,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            executor.run_select(config.connection_id, "SELECT 1")
+
+        self.assertEqual([2500], adapter.set_statement_timeout_calls)
+
     def test_mysql_explain_rejects_analyze_before_connecting(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_mysql_prod_main_ro",
@@ -85,7 +195,9 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
                 audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
             )
             with self.assertRaises(QueryExecutionError):
-                executor.get_table_sample(config.connection_id, "orders", database="crm")
+                executor.get_table_sample(
+                    config.connection_id, "orders", database="crm"
+                )
         self.assertEqual(0, registry.connection_calls)
 
 

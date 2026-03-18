@@ -2,7 +2,6 @@
   "settings": {
     "default_limit": 200,
     "max_limit": 1000,
-    "statement_timeout_ms": 15000,
     "audit_log_path": "logs/audit.jsonl"
   },
   "connections": [

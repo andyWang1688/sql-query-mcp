@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .audit import AuditLogger
 from .config import ServerSettings
@@ -32,7 +32,9 @@ class MetadataService:
             config = self._registry.get_connection_config(connection_id)
             require_engine(config, "postgres", "list_schemas")
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 schemas = adapter.list_schemas(conn)
             duration_ms = _elapsed_ms(started)
             self._audit.log(
@@ -43,7 +45,11 @@ class MetadataService:
                 row_count=len(schemas),
                 extra={"engine": config.engine},
             )
-            return {"connection_id": connection_id, "engine": "postgres", "schemas": schemas}
+            return {
+                "connection_id": connection_id,
+                "engine": "postgres",
+                "schemas": schemas,
+            }
         except Exception as exc:
             duration_ms = _elapsed_ms(started)
             sanitized = sanitize_error_message(str(exc))
@@ -64,7 +70,9 @@ class MetadataService:
             config = self._registry.get_connection_config(connection_id)
             require_engine(config, "mysql", "list_databases")
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 databases = adapter.list_databases(conn)
             duration_ms = _elapsed_ms(started)
             self._audit.log(
@@ -75,7 +83,11 @@ class MetadataService:
                 row_count=len(databases),
                 extra={"engine": config.engine},
             )
-            return {"connection_id": connection_id, "engine": "mysql", "databases": databases}
+            return {
+                "connection_id": connection_id,
+                "engine": "mysql",
+                "databases": databases,
+            }
         except Exception as exc:
             duration_ms = _elapsed_ms(started)
             sanitized = sanitize_error_message(str(exc))
@@ -101,7 +113,9 @@ class MetadataService:
             config = self._registry.get_connection_config(connection_id)
             namespace = resolve_namespace(config, schema=schema, database=database)
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 tables = adapter.list_tables(conn, namespace.value)
             duration_ms = _elapsed_ms(started)
             self._audit.log(
@@ -144,7 +158,9 @@ class MetadataService:
             config = self._registry.get_connection_config(connection_id)
             namespace = resolve_namespace(config, schema=schema, database=database)
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 description = adapter.describe_table(conn, namespace.value, table_name)
                 if not description:
                     raise QueryExecutionError(
@@ -158,7 +174,11 @@ class MetadataService:
                 success=True,
                 duration_ms=duration_ms,
                 row_count=len(description["columns"]),
-                extra={"engine": config.engine, namespace.field_name: namespace.value, "table_name": table_name},
+                extra={
+                    "engine": config.engine,
+                    namespace.field_name: namespace.value,
+                    "table_name": table_name,
+                },
             )
             return {
                 "connection_id": connection_id,
@@ -189,6 +209,13 @@ class MetadataService:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _apply_statement_timeout(
+    adapter: Any, conn: Any, timeout_ms: Optional[int]
+) -> None:
+    if timeout_ms is not None:
+        getattr(adapter, "set_statement_timeout")(conn, timeout_ms)
 
 
 def _build_audit_extra(config, **kwargs: object) -> Dict[str, object]:

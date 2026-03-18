@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import time
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 from .audit import AuditLogger
 from .config import ServerSettings
@@ -34,17 +34,21 @@ class QueryExecutor:
     def run_select(
         self, connection_id: str, sql_text: str, limit: Optional[int] = None
     ) -> Dict[str, object]:
-        cleaned_sql = validate_select_sql(sql_text)
-        row_limit = clamp_limit(limit, self._settings.default_limit, self._settings.max_limit)
-        limited_sql, _ = build_limited_query(cleaned_sql, row_limit)
-        sql_summary = summarize_sql(cleaned_sql)
         started = time.perf_counter()
         config = None
+        row_limit = clamp_limit(
+            limit, self._settings.default_limit, self._settings.max_limit
+        )
 
         try:
             config = self._registry.get_connection_config(connection_id)
+            cleaned_sql = validate_select_sql(sql_text, config.engine)
+            limited_sql, _ = build_limited_query(cleaned_sql, row_limit)
+            sql_summary = summarize_sql(cleaned_sql)
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 with conn.cursor() as cur:
                     cur.execute(limited_sql)
                     columns = adapter.column_names(cur.description)
@@ -60,7 +64,11 @@ class QueryExecutor:
                     duration_ms=duration_ms,
                     row_count=len(trimmed_rows),
                     sql_summary=sql_summary,
-                    extra={"engine": config.engine, "limit": row_limit, "truncated": truncated},
+                    extra={
+                        "engine": config.engine,
+                        "limit": row_limit,
+                        "truncated": truncated,
+                    },
                 )
                 return {
                     "connection_id": connection_id,
@@ -74,6 +82,7 @@ class QueryExecutor:
                 }
         except Exception as exc:
             duration_ms = _elapsed_ms(started)
+            sql_summary = summarize_sql(sql_text)
             sanitized = sanitize_error_message(str(exc))
             self._audit.log(
                 tool="run_select",
@@ -89,16 +98,18 @@ class QueryExecutor:
     def explain_query(
         self, connection_id: str, sql_text: str, analyze: bool = False
     ) -> Dict[str, object]:
-        cleaned_sql = validate_select_sql(sql_text)
-        sql_summary = summarize_sql(cleaned_sql)
         started = time.perf_counter()
         config = None
         try:
             config = self._registry.get_connection_config(connection_id)
+            cleaned_sql = validate_select_sql(sql_text, config.engine)
+            sql_summary = summarize_sql(cleaned_sql)
             adapter = self._registry.get_adapter(config)
             explain_sql = adapter.build_explain_query(cleaned_sql, analyze=analyze)
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 with conn.cursor() as cur:
                     cur.execute(explain_sql)
                     rows = cur.fetchall()
@@ -123,6 +134,7 @@ class QueryExecutor:
                 }
         except Exception as exc:
             duration_ms = _elapsed_ms(started)
+            sql_summary = summarize_sql(sql_text)
             sanitized = sanitize_error_message(str(exc))
             self._audit.log(
                 tool="explain_query",
@@ -143,16 +155,22 @@ class QueryExecutor:
         database: Optional[str] = None,
         limit: Optional[int] = None,
     ) -> Dict[str, object]:
-        row_limit = clamp_limit(limit, self._settings.default_limit, self._settings.max_limit)
+        row_limit = clamp_limit(
+            limit, self._settings.default_limit, self._settings.max_limit
+        )
         started = time.perf_counter()
         config = None
         try:
             config = self._registry.get_connection_config(connection_id)
             namespace = resolve_namespace(config, schema=schema, database=database)
             adapter = self._registry.get_adapter(config)
-            query = adapter.build_sample_query(namespace.value, table_name, row_limit + 1)
+            query = adapter.build_sample_query(
+                namespace.value, table_name, row_limit + 1
+            )
             with self._registry.connection_from_config(config) as (conn, adapter):
-                adapter.set_statement_timeout(conn, self._settings.statement_timeout_ms)
+                _apply_statement_timeout(
+                    adapter, conn, self._settings.statement_timeout_ms
+                )
                 with conn.cursor() as cur:
                     cur.execute(query)
                     columns = adapter.column_names(cur.description)
@@ -209,6 +227,13 @@ class QueryExecutor:
 
 def _elapsed_ms(started: float) -> int:
     return int((time.perf_counter() - started) * 1000)
+
+
+def _apply_statement_timeout(
+    adapter: Any, conn: Any, timeout_ms: Optional[int]
+) -> None:
+    if timeout_ms is not None:
+        getattr(adapter, "set_statement_timeout")(conn, timeout_ms)
 
 
 def _build_audit_extra(config, **kwargs: object) -> Dict[str, object]:

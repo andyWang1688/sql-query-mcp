@@ -17,7 +17,11 @@ class ConfigTestCase(unittest.TestCase):
 
     def test_valid_config_loads_connections(self) -> None:
         payload = {
-            "settings": {"default_limit": 100, "max_limit": 500},
+            "settings": {
+                "default_limit": 100,
+                "max_limit": 500,
+                "statement_timeout_ms": 2500,
+            },
             "connections": [
                 {
                     "connection_id": "crm_prod_muqiao_ro",
@@ -42,6 +46,105 @@ class ConfigTestCase(unittest.TestCase):
         self.assertEqual("postgres", config.connections[0].engine)
         self.assertEqual(100, config.settings.default_limit)
         self.assertEqual(500, config.settings.max_limit)
+        self.assertEqual(2500, config.settings.statement_timeout_ms)
+
+    def test_statement_timeout_uses_database_default_when_missing(self) -> None:
+        payload = {
+            "settings": {"default_limit": 100, "max_limit": 500},
+            "connections": [
+                {
+                    "connection_id": "crm_prod_muqiao_ro",
+                    "engine": "postgres",
+                    "label": "CRM Prod",
+                    "env": "prod",
+                    "tenant": "muqiao",
+                    "role": "ro",
+                    "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+                    "enabled": True,
+                    "default_schema": "public",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            config = load_config(str(path))
+
+        self.assertIsNone(config.settings.statement_timeout_ms)
+
+    def test_statement_timeout_allows_null(self) -> None:
+        payload = {
+            "settings": {
+                "default_limit": 100,
+                "max_limit": 500,
+                "statement_timeout_ms": None,
+            },
+            "connections": [
+                {
+                    "connection_id": "crm_prod_muqiao_ro",
+                    "engine": "postgres",
+                    "label": "CRM Prod",
+                    "env": "prod",
+                    "tenant": "muqiao",
+                    "role": "ro",
+                    "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+                    "enabled": True,
+                    "default_schema": "public",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            config = load_config(str(path))
+
+        self.assertIsNone(config.settings.statement_timeout_ms)
+
+    def test_statement_timeout_rejects_zero(self) -> None:
+        payload = {
+            "settings": {"statement_timeout_ms": 0},
+            "connections": [
+                {
+                    "connection_id": "crm_prod_muqiao_ro",
+                    "engine": "postgres",
+                    "label": "CRM Prod",
+                    "env": "prod",
+                    "tenant": "muqiao",
+                    "role": "ro",
+                    "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+                    "enabled": True,
+                    "default_schema": "public",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ConfigurationError):
+                load_config(str(path))
+
+    def test_statement_timeout_rejects_negative_values(self) -> None:
+        payload = {
+            "settings": {"statement_timeout_ms": -1},
+            "connections": [
+                {
+                    "connection_id": "crm_prod_muqiao_ro",
+                    "engine": "postgres",
+                    "label": "CRM Prod",
+                    "env": "prod",
+                    "tenant": "muqiao",
+                    "role": "ro",
+                    "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+                    "enabled": True,
+                    "default_schema": "public",
+                }
+            ],
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ConfigurationError):
+                load_config(str(path))
 
     def test_missing_engine_fails(self) -> None:
         payload = {
