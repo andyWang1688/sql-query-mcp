@@ -62,8 +62,10 @@ flowchart LR
 | DDL / DML | 禁止 `INSERT`、`UPDATE`、`DELETE`、`DROP` 等 |
 | 默认行数限制 | `LIMIT 200` |
 | 最大行数限制 | `LIMIT 1000` |
-| 超时 | 默认 15 秒 |
+| 数据库执行超时 | 默认沿用数据库自身配置；可用 `statement_timeout_ms` 显式覆盖 |
 | 审计 | 记录 `connection_id`、`engine`、工具名、SQL 摘要、耗时、结果状态 |
+
+SQL 会先经过 `sqlglot` 做语义解析，只读判定基于 AST，而不是简单关键字匹配；因此像 `ilike 'call %'` 这类字符串字面量不会再误报，但写操作、可写 CTE 和多语句仍会被拒绝。
 
 ## 60 秒上手
 
@@ -94,7 +96,6 @@ cp config/connections.example.json config/connections.json
   "settings": {
     "default_limit": 200,
     "max_limit": 1000,
-    "statement_timeout_ms": 15000,
     "audit_log_path": "logs/audit.jsonl"
   },
   "connections": [
@@ -123,6 +124,22 @@ cp config/connections.example.json config/connections.json
   ]
 }
 ```
+
+如果你想为这个 MCP 服务单独覆盖数据库执行超时，可以显式配置：
+
+```json
+{
+  "settings": {
+    "statement_timeout_ms": 15000
+  }
+}
+```
+
+说明：
+
+- `statement_timeout_ms` 是数据库会话级执行超时，不是 MCP 客户端请求超时
+- 不配置或显式设为 `null` 时，服务端不会下发超时 SQL，直接使用数据库默认值
+- 客户端超时和数据库执行超时是两层配置，需要分别设置
 
 对应环境变量：
 
@@ -173,6 +190,7 @@ MYSQL_CONN_CRM_PROD_MAIN_RO = "mysql://user:password@host:3306/crm"
 - `connection_id` 只要求稳定且唯一；推荐保持 `<system>_<env>_<tenant>_<role>` 风格
 - 服务端只读取配置中的 `engine`，不会从 `connection_id` 推断数据库类型
 - `dsn_env` 填的是环境变量名，不是真实连接串
+- `statement_timeout_ms` 是可选项；不写或设为 `null` 时沿用数据库默认超时
 - 可通过 `SQL_QUERY_MCP_CONFIG` 指向自定义配置文件
 
 ## 测试

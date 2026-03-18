@@ -3,7 +3,11 @@ from __future__ import annotations
 import json
 import unittest
 
-from sql_query_mcp.validator import build_limited_query, clamp_limit, validate_select_sql
+from sql_query_mcp.validator import (
+    build_limited_query,
+    clamp_limit,
+    validate_select_sql,
+)
 from sql_query_mcp.adapters.mysql import MySQLAdapter
 from sql_query_mcp.adapters.postgres import PostgresAdapter
 from sql_query_mcp.errors import SecurityError
@@ -11,19 +15,36 @@ from sql_query_mcp.errors import SecurityError
 
 class ValidatorTestCase(unittest.TestCase):
     def test_accepts_plain_select(self) -> None:
-        self.assertEqual("SELECT 1", validate_select_sql("SELECT 1;"))
+        self.assertEqual("SELECT 1", validate_select_sql("SELECT 1;", "postgres"))
 
     def test_accepts_cte_select(self) -> None:
         sql = "WITH recent AS (SELECT 1 AS id) SELECT * FROM recent"
-        self.assertEqual(sql, validate_select_sql(sql))
+        self.assertEqual(sql, validate_select_sql(sql, "postgres"))
 
-    def test_rejects_mutating_keywords(self) -> None:
+    def test_allows_string_literal_with_call_prefix(self) -> None:
+        sql = "SELECT * FROM users WHERE note ILIKE 'call %'"
+        self.assertEqual(sql, validate_select_sql(sql, "postgres"))
+
+    def test_allows_string_literal_with_mutating_keyword(self) -> None:
+        sql = "SELECT * FROM users WHERE status = 'delete pending'"
+        self.assertEqual(sql, validate_select_sql(sql, "mysql"))
+
+    def test_rejects_delete_statement(self) -> None:
         with self.assertRaises(SecurityError):
-            validate_select_sql("DELETE FROM users")
+            validate_select_sql("DELETE FROM users", "postgres")
+
+    def test_rejects_call_statement(self) -> None:
+        with self.assertRaises(SecurityError):
+            validate_select_sql("CALL refresh_orders()", "mysql")
+
+    def test_rejects_writable_cte(self) -> None:
+        sql = "WITH deleted_rows AS (DELETE FROM users RETURNING id) SELECT * FROM deleted_rows"
+        with self.assertRaises(SecurityError):
+            validate_select_sql(sql, "postgres")
 
     def test_rejects_sql_comments(self) -> None:
         with self.assertRaises(SecurityError):
-            validate_select_sql("SELECT 1 -- hidden")
+            validate_select_sql("SELECT 1 -- hidden", "postgres")
 
     def test_limit_is_clamped(self) -> None:
         self.assertEqual(1000, clamp_limit(5000, 200, 1000))

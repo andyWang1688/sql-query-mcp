@@ -33,7 +33,6 @@ cp config/connections.example.json config/connections.json
   "settings": {
     "default_limit": 200,
     "max_limit": 1000,
-    "statement_timeout_ms": 15000,
     "audit_log_path": "logs/audit.jsonl"
   },
   "connections": [
@@ -63,6 +62,22 @@ cp config/connections.example.json config/connections.json
 }
 ```
 
+如果你要为这个 MCP 服务单独覆盖数据库执行超时，可以额外加上：
+
+```json
+{
+  "settings": {
+    "statement_timeout_ms": 15000
+  }
+}
+```
+
+说明：
+
+- `statement_timeout_ms` 是数据库会话级执行超时，不是 OpenCode 的客户端请求超时
+- 不配置或显式设为 `null` 时，服务端不会下发超时设置，直接沿用数据库默认值
+- 客户端超时和数据库执行超时是两层配置，需要分别设置
+
 准备对应 DSN 环境变量值：
 
 ```bash
@@ -74,6 +89,7 @@ export MYSQL_CONN_CRM_PROD_MAIN_RO='mysql://username:password@host:3306/crm'
 
 - `engine` 必须显式写在 `connections.json` 里，服务端不会从 `connection_id` 推断数据库类型
 - `connection_id` 推荐保持稳定的下划线命名；如需区分同类不同连接，可以增加额外段，但不要依赖其中的 `pg/mysql` 字样做路由
+- SQL 校验基于 `sqlglot` 语义解析，只接受只读 `SELECT` / `WITH ... SELECT`，不会因为字符串字面量里出现 `call`、`delete` 之类的单词而误拦截
 
 ## 3. 在 OpenCode 中注册 MCP
 

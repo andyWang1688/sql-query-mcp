@@ -24,6 +24,7 @@ dependencies = [
   "PyMySQL>=1.1",
   "psycopg[binary]>=3.2",
   "psycopg-pool>=3.2",
+  "sqlglot>=25.20.2",
 ]
 
 [project.urls]

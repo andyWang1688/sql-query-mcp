@@ -3,25 +3,65 @@
 from __future__ import annotations
 
 import re
-from typing import Optional, Tuple
+from typing import Any, Optional, Tuple
+
+from sqlglot import exp, parse_one
+from sqlglot.errors import ParseError
 
 from .errors import SecurityError
 
 COMMENT_TOKENS = ("--", "/*", "*/")
-BANNED_KEYWORDS_RE = re.compile(
-    r"\b(insert|update|delete|alter|drop|truncate|copy|create|grant|revoke|comment|refresh|merge|call|vacuum|set|reset|do)\b",
-    re.IGNORECASE,
+READ_ONLY_ROOT_TYPES = tuple(
+    expr_type
+    for expr_type in (
+        getattr(exp, name, None) for name in ("Select", "Union", "Except", "Intersect")
+    )
+    if isinstance(expr_type, type)
 )
+MUTATING_EXPRESSION_TYPES = tuple(
+    expr_type
+    for expr_type in (
+        getattr(exp, name, None)
+        for name in (
+            "Insert",
+            "Update",
+            "Delete",
+            "Merge",
+            "Create",
+            "Drop",
+            "Alter",
+            "Command",
+            "Copy",
+            "Call",
+            "Set",
+            "Pragma",
+            "Use",
+            "Grant",
+            "Revoke",
+            "Transaction",
+            "Commit",
+            "Rollback",
+            "TruncateTable",
+            "Vacuum",
+            "Into",
+        )
+    )
+    if isinstance(expr_type, type)
+)
+DIALECT_BY_ENGINE = {"postgres": "postgres", "mysql": "mysql"}
 
 
-def validate_select_sql(sql: str) -> str:
+def validate_select_sql(sql: str, engine: str) -> str:
     cleaned = _clean_sql(sql)
     lowered = cleaned.lstrip().lower()
     if lowered.startswith("explain"):
-        raise SecurityError("explain_query 会自动包装 SQL，请直接传 SELECT 或 WITH 查询。")
+        raise SecurityError(
+            "explain_query 会自动包装 SQL，请直接传 SELECT 或 WITH 查询。"
+        )
     if not (lowered.startswith("select") or lowered.startswith("with")):
         raise SecurityError("仅允许 SELECT 或 WITH ... SELECT 语句。")
-    _reject_banned_keywords(cleaned)
+    statement = _parse_statement(cleaned, engine)
+    _ensure_read_only_statement(statement)
     return cleaned
 
 
@@ -67,7 +107,22 @@ def _clean_sql(sql: str) -> str:
     return cleaned
 
 
-def _reject_banned_keywords(sql: str) -> None:
-    match = BANNED_KEYWORDS_RE.search(sql)
-    if match:
-        raise SecurityError(f"检测到禁止关键字: {match.group(1)}")
+def _parse_statement(sql: str, engine: str) -> Any:
+    try:
+        dialect = DIALECT_BY_ENGINE[engine]
+    except KeyError as exc:
+        raise SecurityError(f"不支持的 SQL 方言: {engine}") from exc
+
+    try:
+        return parse_one(sql, dialect=dialect)
+    except ParseError as exc:
+        raise SecurityError(f"SQL 解析失败，已拒绝执行: {exc}") from exc
+
+
+def _ensure_read_only_statement(statement: Any) -> None:
+    if not isinstance(statement, READ_ONLY_ROOT_TYPES):
+        raise SecurityError("仅允许 SELECT 或 WITH ... SELECT 语句。")
+
+    for node in statement.walk():
+        if isinstance(node, MUTATING_EXPRESSION_TYPES):
+            raise SecurityError(f"仅允许只读查询，检测到写操作: {node.key.upper()}")
