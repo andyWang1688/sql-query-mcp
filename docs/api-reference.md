@@ -1,7 +1,11 @@
-# API reference
+# API reference (Chinese)
 
-本文汇总 `sql-query-mcp` 暴露的 MCP tools，包括适用引擎、参数、返回结果和
-使用示例。你可以把它当作客户端提示词和接入测试时的参考手册。
+本文是 `sql-query-mcp` 的中文 API reference 页面。你可以在这里查到每个
+tool 的适用范围、参数、返回结果和使用示例，用它来编写客户端提示词或核对
+接入测试。
+
+这些 tools 面向 AI 的多数据库发现、结构理解和受控查询流程，并在明确边界内
+保留当前 API 中与 PostgreSQL、MySQL 相关的实际行为差异。
 
 ## 响应约定
 
