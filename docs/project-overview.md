@@ -5,11 +5,13 @@
 
 ## 项目定位
 
-`sql-query-mcp` 是一个只读 SQL MCP 服务。它把数据库查询能力封装成 MCP
-tools，让 AI 客户端可以用统一接口访问 PostgreSQL 和 MySQL。
+`sql-query-mcp` 是一个面向 AI 数据库工作的通用 MCP 服务。它把数据库发现、
+受控查询和执行计划等能力封装成 MCP tools，让 AI 客户端可以在明确、可审
+计的边界内访问当前已接入的数据库。
 
-这个项目的重点不是做一个通用数据库代理，而是给 AI 使用场景建立稳定、明
-确、可审计的边界。
+这个项目的重点不是做一个无限制的数据库代理，而是在服务端收拢连接处理、
+命名空间规则、SQL 校验和审计能力，为 AI 使用场景建立稳定、清晰的产品边
+界。
 
 ## 解决的问题
 
@@ -31,9 +33,10 @@ tools，让 AI 客户端可以用统一接口访问 PostgreSQL 和 MySQL。
 每个连接都由 `connection_id` 唯一标识，并声明自己的数据库引擎、环境、租
 户、角色和 DSN 环境变量名。
 
-配置由 `sql_query_mcp/config.py` 负责加载和校验。服务默认读取
-`config/connections.json`，也支持通过 `SQL_QUERY_MCP_CONFIG` 指向自定义
-路径。
+服务默认读取 `config/connections.json`，也支持通过
+`SQL_QUERY_MCP_CONFIG` 指向自定义路径。
+
+实现上，这部分由 `sql_query_mcp/config.py` 负责加载和校验。
 
 ### 命名空间解析
 
@@ -43,14 +46,14 @@ tools，让 AI 客户端可以用统一接口访问 PostgreSQL 和 MySQL。
 - PostgreSQL: 使用 `schema`
 - MySQL: 使用 `database`
 
-这部分逻辑在 `sql_query_mcp/namespace.py`，会在进入数据库前完成参数合法
-性校验和默认值回退。
+服务会在进入数据库前完成参数合法性校验和默认值回退。
+
+实现上，这部分逻辑位于 `sql_query_mcp/namespace.py`。
 
 ### 只读 SQL 校验
 
-`run_select` 和 `explain_query` 在执行前会先调用
-`sql_query_mcp/validator.py`。这里使用 `sqlglot` 做 AST 级校验，而不是只做
-关键字匹配。
+`run_select` 和 `explain_query` 在执行前都会先经过只读 SQL 校验。这里使用
+`sqlglot` 做 AST 级校验，而不是只做关键字匹配。
 
 这意味着：
 
@@ -58,13 +61,16 @@ tools，让 AI 客户端可以用统一接口访问 PostgreSQL 和 MySQL。
 - 多语句、注释、DDL、DML、事务语句会被拒绝
 - 字符串字面量中的敏感单词不会误触发拦截
 
+实现上，相关校验逻辑位于 `sql_query_mcp/validator.py`。
+
 ### 审计日志
 
 每次工具调用都会记录结果，包括成功和失败两类事件。审计信息至少包含工具
 名、连接 ID、耗时、结果状态，以及 SQL 摘要或错误信息。
 
-日志由 `sql_query_mcp/audit.py` 负责写入，默认路径来自配置中的
-`audit_log_path`。
+默认日志路径来自配置中的 `audit_log_path`。
+
+实现上，日志写入由 `sql_query_mcp/audit.py` 负责。
 
 ## 工具分层
 
@@ -109,13 +115,14 @@ flowchart LR
 
 ## 适用场景
 
-如果你的目标是让 AI 助手安全地理解数据库结构，这个项目比较合适。下面几类
-场景最匹配。
+如果你的目标是把数据库上下文以受控方式提供给 AI，这个项目比较合适。下面
+几类场景最匹配。
 
-- AI 辅助数据排查，但不希望暴露数据库账号明文
-- 让模型先看表结构、索引和样本，再生成分析 SQL
-- 同时接入 PostgreSQL 和 MySQL，但不想让客户端处理方言差异
-- 需要保留审计记录，便于追踪模型查过什么
+- 希望给 AI 助手开放结构发现、样本读取和只读分析能力，但保持明确边界
+- 希望把连接处理、SQL 校验和审计记录集中在服务端，而不是交给客户端直连
+- 让模型先看表结构、索引和样本，再生成或改写分析 SQL
+- 需要在当前已接入的数据库之间复用同一套 MCP 接入方式，同时保留原生命名
+  空间差异
 
 ## 不做什么
 

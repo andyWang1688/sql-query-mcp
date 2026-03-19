@@ -1,47 +1,83 @@
 # sql-query-mcp
 
-`sql-query-mcp` is a read-only MCP server for PostgreSQL and MySQL. It gives
-AI clients a controlled way to inspect database structure, fetch small data
-samples, run validated read-only queries, and inspect execution plans without
-putting raw DSNs or write access directly in the client.
+[中文版](README-zh.md)
 
-It is intentionally narrow in scope. PostgreSQL and MySQL are supported now.
-Other database adapters are not yet supported.
+A general-purpose MCP server that lets AI work with multiple databases within
+clear boundaries.
 
-## What you can do
+## Current database support
 
-The current release exposes eight public tools for metadata discovery, sampling,
-read-only querying, and plan inspection.
+| Database | Status | Current availability |
+| --- | --- | --- |
+| PostgreSQL | Supported | Available today |
+| MySQL | Supported | Available today |
+| SQLite | Candidate | Not supported yet |
+| SQL Server | Candidate | Not supported yet |
+| ClickHouse | Candidate | Not supported yet |
+
+## Product value
+
+`sql-query-mcp` helps AI clients discover schema, sample data, and analyze
+read-only queries through one controlled MCP interface.
+
+It keeps connection handling, namespace rules, SQL validation, and audit
+logging on the server side, so you can expose useful database context to AI
+without exposing raw connection strings or flattening engine-specific concepts.
+
+## What AI can do with it
+
+The current tool set focuses on database discovery and controlled query
+workflows. You can use it to help an AI assistant understand structure before
+it generates or refines SQL.
+
+MySQL supports `explain_query`, but not `explain_query(..., analyze=True)` in
+the current implementation.
 
 | Tool | PostgreSQL | MySQL | Purpose |
 | --- | --- | --- | --- |
-| `list_connections` | Yes | Yes | List configured connections |
-| `list_schemas` | Yes | No | List visible PostgreSQL schemas |
-| `list_databases` | No | Yes | List visible MySQL databases |
-| `list_tables` | Yes | Yes | List tables and views in a schema or database |
-| `describe_table` | Yes | Yes | Describe columns, keys, and indexes |
-| `run_select` | Yes | Yes | Run a validated read-only query |
-| `explain_query` | Yes | Yes | Run server-managed `EXPLAIN` for a query |
-| `get_table_sample` | Yes | Yes | Fetch a small sample from a table |
+| `list_connections()` | Yes | Yes | List configured connections |
+| `list_schemas(connection_id)` | Yes | No | List visible PostgreSQL schemas |
+| `list_databases(connection_id)` | No | Yes | List visible MySQL databases |
+| `list_tables(connection_id, schema?, database?)` | Yes | Yes | List tables and views |
+| `describe_table(connection_id, table_name, schema?, database?)` | Yes | Yes | Inspect columns, keys, and indexes |
+| `run_select(connection_id, sql, limit?)` | Yes | Yes | Run read-only queries |
+| `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Inspect query plans |
+| `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Fetch small table samples |
 
-The API keeps PostgreSQL and MySQL terms explicit, so callers can use the same
-names they already see in each database:
+These tools are useful for tasks such as listing namespaces, inspecting table
+definitions, reviewing indexes, sampling records, and analyzing read-only
+queries with `EXPLAIN`. For full request and response details, see
+`docs/api-reference.md` (Chinese).
 
-- PostgreSQL tools use `schema`
-- MySQL tools use `database`
-- Each connection must declare its `engine` explicitly
+## How boundaries are constrained
 
-For full request and response details, see the
-[API reference](docs/api-reference.md).
+The product boundary is intentionally narrow today. Only PostgreSQL and MySQL
+are available today, and the current tool set is fully read-only.
+
+The service keeps those boundaries explicit in a few ways.
+
+- Connections declare `engine` explicitly, so the server never guesses from
+  `connection_id`.
+- PostgreSQL uses `schema`, and MySQL uses `database`, without collapsing both
+  into one vague namespace field.
+- Real DSNs stay in environment variables, while config files store only the
+  environment variable names.
+- Query execution passes through `sqlglot` validation before reaching the
+  database.
+- The server accepts only `SELECT` and `WITH ... SELECT`, rejects comments and
+  multi-statement input, and records audit logs for each call.
+
+For MySQL, `explain_query(..., analyze=True)` is not available in the current
+implementation.
 
 ## Quick start
 
-If you want to get the server running first, complete the minimal setup below.
+If you want to get the server running first and explore the rest later, follow
+these steps.
 
-1. Create a virtual environment and install the package.
+1. Create a virtual environment and install the project.
 
 ```bash
-cd /absolute/path/to/sql-query-mcp
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
@@ -66,45 +102,44 @@ export SQL_QUERY_MCP_CONFIG='/absolute/path/to/sql-query-mcp/config/connections.
 
 4. Register the server in your MCP client.
 
-- [Codex setup](docs/codex-setup.md)
-- [OpenCode setup](docs/opencode-setup.md)
+- Codex: `docs/codex-setup.md` (Chinese)
+- OpenCode: `docs/opencode-setup.md` (Chinese)
 
 The console entry point is `sql-query-mcp`, which maps to
 `sql_query_mcp.app:main`.
 
-## Configuration summary
+The default config path is `config/connections.json`. If you need a different
+location, set `SQL_QUERY_MCP_CONFIG`.
 
-The server reads `config/connections.json` by default. To use a different file,
-set `SQL_QUERY_MCP_CONFIG`.
+The example config looks like this.
 
 ```json
 {
   "settings": {
     "default_limit": 200,
     "max_limit": 1000,
-    "audit_log_path": "logs/audit.jsonl",
-    "statement_timeout_ms": 15000
+    "audit_log_path": "logs/audit.jsonl"
   },
   "connections": [
     {
-      "connection_id": "crm_prod_main_ro",
+      "connection_id": "crm_prod_muqiao_ro",
       "engine": "postgres",
-      "label": "CRM PostgreSQL production read-only",
+      "label": "CRM PostgreSQL production / Muqiao / read-only",
       "env": "prod",
-      "tenant": "main",
+      "tenant": "muqiao",
       "role": "ro",
-      "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
+      "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
       "enabled": true,
       "default_schema": "public"
     },
     {
-      "connection_id": "crm_mysql_prod_main_ro",
+      "connection_id": "crm_mysql_prod_muqiao_ro",
       "engine": "mysql",
-      "label": "CRM MySQL production read-only",
+      "label": "CRM MySQL production / Muqiao / read-only",
       "env": "prod",
-      "tenant": "main",
+      "tenant": "muqiao",
       "role": "ro",
-      "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MUQIAO_RO",
       "enabled": true,
       "default_database": "crm"
     }
@@ -112,52 +147,29 @@ set `SQL_QUERY_MCP_CONFIG`.
 }
 ```
 
-Key rules:
-
-- Store the real DSN in environment variables, not in `connections.json`
-- Use `default_schema` for PostgreSQL connections
-- Use `default_database` for MySQL connections
-- Keep the database account itself read-only; this server does not replace
-  database permissions
-
-## Safety model
-
-The server is designed to keep the database access path narrow and predictable.
-Its safeguards are explicit, server-side checks rather than prompt-only rules.
-
-- `run_select` and `explain_query` validate SQL with `sqlglot` AST parsing
-- Only `SELECT` and `WITH ... SELECT` statements are accepted
-- SQL comments and multi-statement input are rejected
-- Mutating statements such as `INSERT`, `UPDATE`, `DELETE`, `DROP`, and
-  transaction control statements are rejected
-- Requested row counts are clamped to configured limits
-- `explain_query` wraps the input query on the server; callers do not pass raw
-  `EXPLAIN ...` statements
-- MySQL does not support `analyze=True` for `explain_query`
-
-Audit logging covers the metadata and query paths, including metadata lookups,
-`run_select`, `explain_query`, and `get_table_sample`. `list_connections` is
-outside that path.
-
 ## Documentation
 
-Start with these pages if you want the architecture, API contract, or client
-setup details.
+If you want implementation details, setup guidance, or internal structure, use
+these docs as your starting points.
 
-- [Project overview](docs/project-overview.md)
-- [API reference](docs/api-reference.md)
-- [Codex setup](docs/codex-setup.md)
-- [OpenCode setup](docs/opencode-setup.md)
-- [Chinese overview](docs/README.zh-CN.md)
+- `docs/project-overview.md`: project goals, concepts, and code structure (Chinese)
+- `docs/api-reference.md`: MCP tool reference (Chinese)
+- `docs/codex-setup.md`: Codex setup steps (Chinese)
+- `docs/opencode-setup.md`: OpenCode setup steps (Chinese)
+- `docs/git-workflow.md`: repository collaboration workflow (Chinese)
 
-## Contributing and roadmap
+## Contributing
 
-If you want to contribute or understand what is planned next, start with these
-project-level pages.
+If you want to contribute or review the repository workflow, start with these
+pages.
 
-- [Contribution guide](CONTRIBUTING.md)
-- [Roadmap](docs/roadmap.md)
+- `CONTRIBUTING.md`
+- `docs/roadmap.md`
+- `docs/git-workflow.md` (Chinese)
+
+Run `PYTHONPATH=. python3 -m unittest discover -s tests` before you submit
+changes.
 
 ## License
 
-This project is released under the MIT License.
+This project is released under the MIT License. See `LICENSE`.
