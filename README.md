@@ -1,16 +1,44 @@
 # sql-query-mcp
 
-只读 SQL MCP 服务，给 Codex、OpenCode、ChatGPT 等 AI 客户端提供安全的
-PostgreSQL / MySQL 查询入口。
+`sql-query-mcp` is a read-only MCP server for PostgreSQL and MySQL. It gives
+AI clients a controlled way to inspect database structure, fetch small data
+samples, run validated read-only queries, and inspect execution plans without
+putting raw DSNs or write access directly in the client.
 
-`sql-query-mcp` 的目标很简单：让 AI 助手可以读数据库结构和数据样本，但
-不直接接触真实连接串、写权限，或者模糊的跨引擎命名。
+It is intentionally narrow in scope. PostgreSQL and MySQL are supported now.
+Other database adapters are not yet supported.
+
+## What you can do
+
+The current release exposes eight public tools for metadata discovery, sampling,
+read-only querying, and plan inspection.
+
+| Tool | PostgreSQL | MySQL | Purpose |
+| --- | --- | --- | --- |
+| `list_connections` | Yes | Yes | List configured connections |
+| `list_schemas` | Yes | No | List visible PostgreSQL schemas |
+| `list_databases` | No | Yes | List visible MySQL databases |
+| `list_tables` | Yes | Yes | List tables and views in a schema or database |
+| `describe_table` | Yes | Yes | Describe columns, keys, and indexes |
+| `run_select` | Yes | Yes | Run a validated read-only query |
+| `explain_query` | Yes | Yes | Run server-managed `EXPLAIN` for a query |
+| `get_table_sample` | Yes | Yes | Fetch a small sample from a table |
+
+The API keeps PostgreSQL and MySQL terms explicit, so callers can use the same
+names they already see in each database:
+
+- PostgreSQL tools use `schema`
+- MySQL tools use `database`
+- Each connection must declare its `engine` explicitly
+
+For full request and response details, see the
+[API reference](docs/api-reference.md).
 
 ## Quick start
 
-如果你想先跑起来再看细节，可以按下面的顺序完成最小接入。
+If you want to get the server running first, complete the minimal setup below.
 
-1. 创建虚拟环境并安装项目。
+1. Create a virtual environment and install the package.
 
 ```bash
 cd /absolute/path/to/sql-query-mcp
@@ -20,56 +48,34 @@ python -m pip install --upgrade pip
 pip install -e .
 ```
 
-2. 复制示例配置。
+2. Copy the example connection config.
 
 ```bash
 cp config/connections.example.json config/connections.json
 ```
 
-3. 设置数据库连接串环境变量。
+3. Export your database DSNs as environment variables.
+
+These example names match the copied `config/connections.example.json` file.
 
 ```bash
 export PG_CONN_CRM_PROD_MUQIAO_RO='postgresql://user:password@host:5432/dbname'
 export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
+export SQL_QUERY_MCP_CONFIG='/absolute/path/to/sql-query-mcp/config/connections.json'
 ```
 
-4. 在 MCP 客户端里注册服务。
+4. Register the server in your MCP client.
 
-- Codex: 见 `docs/codex-setup.md`
-- OpenCode: 见 `docs/opencode-setup.md`
+- [Codex setup](docs/codex-setup.md)
+- [OpenCode setup](docs/opencode-setup.md)
 
-## What it does
+The console entry point is `sql-query-mcp`, which maps to
+`sql_query_mcp.app:main`.
 
-这个项目把常见的数据库只读能力封装成 MCP tools，适合让 AI 助手做结构探
-索、表说明、执行计划分析，以及受限的只读查询。
+## Configuration summary
 
-| Tool | PostgreSQL | MySQL | Purpose |
-| --- | --- | --- | --- |
-| `list_connections()` | Yes | Yes | 列出已配置连接 |
-| `list_schemas(connection_id)` | Yes | No | 列出 PostgreSQL 可见 schema |
-| `list_databases(connection_id)` | No | Yes | 列出 MySQL 可见 database |
-| `list_tables(connection_id, schema?, database?)` | Yes | Yes | 列出表和视图 |
-| `describe_table(connection_id, table_name, schema?, database?)` | Yes | Yes | 查看列、主键、索引 |
-| `run_select(connection_id, sql, limit?)` | Yes | Yes | 执行只读查询 |
-| `explain_query(connection_id, sql, analyze?)` | Yes | Yes | 获取执行计划 |
-| `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | 获取表数据样本 |
-
-更完整的输入输出说明见 `docs/api-reference.md`。
-
-## Why it exists
-
-这个项目重点解决的是“AI 可以查库，但边界必须清楚”的问题。
-
-- `engine` 必须显式配置，服务端不会从 `connection_id` 猜数据库类型
-- PostgreSQL 使用 `schema`，MySQL 使用 `database`，不混用模糊命名
-- 真实 DSN 放在环境变量，配置文件只保存环境变量名
-- 查询先过 `sqlglot` AST 校验，再进入数据库执行
-- 默认只开放只读能力，并写入审计日志
-
-## Configuration
-
-配置文件默认读取 `config/connections.json`。如果你需要放到别的位置，可通
-过 `SQL_QUERY_MCP_CONFIG` 指定。
+The server reads `config/connections.json` by default. To use a different file,
+set `SQL_QUERY_MCP_CONFIG`.
 
 ```json
 {
@@ -106,79 +112,52 @@ export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
 }
 ```
 
-关键配置项如下。
+Key rules:
 
-| Field | Required | Description |
-| --- | --- | --- |
-| `connection_id` | Yes | 连接唯一标识，必须符合 `<system>_<env>_<tenant>_<role>` 风格 |
-| `engine` | Yes | 仅支持 `postgres` 或 `mysql` |
-| `dsn_env` | Yes | 存放真实 DSN 的环境变量名 |
-| `default_schema` | PostgreSQL only | PostgreSQL 默认 schema |
-| `default_database` | MySQL only | MySQL 默认 database |
-| `default_limit` | No | `run_select` / `get_table_sample` 默认返回行数 |
-| `max_limit` | No | 返回行数上限 |
-| `statement_timeout_ms` | No | 数据库会话级执行超时 |
-| `audit_log_path` | No | 审计日志输出路径 |
+- Store the real DSN in environment variables, not in `connections.json`
+- Use `default_schema` for PostgreSQL connections
+- Use `default_database` for MySQL connections
+- Keep the database account itself read-only; this server does not replace
+  database permissions
 
 ## Safety model
 
-服务的核心设计是限制风险，而不是替代数据库权限管理。你仍然需要给数据库
-账号配置只读权限。
+The server is designed to keep the database access path narrow and predictable.
+Its safeguards are explicit, server-side checks rather than prompt-only rules.
 
-| Rule | Behavior |
-| --- | --- |
-| SQL type | 仅接受 `SELECT` 和 `WITH ... SELECT` |
-| Comments | 拒绝 `--`、`/*`、`*/` |
-| Multi-statement | 拒绝多语句 |
-| Mutations | 拒绝 `INSERT`、`UPDATE`、`DELETE`、`DROP` 等写操作 |
-| Row limit | 默认 `200`，最大 `1000` |
-| Explain | 通过 `explain_query` 包装执行，不直接接受 `EXPLAIN ...` 输入 |
-| Audit | 记录工具名、连接、SQL 摘要、耗时、结果状态 |
+- `run_select` and `explain_query` validate SQL with `sqlglot` AST parsing
+- Only `SELECT` and `WITH ... SELECT` statements are accepted
+- SQL comments and multi-statement input are rejected
+- Mutating statements such as `INSERT`, `UPDATE`, `DELETE`, `DROP`, and
+  transaction control statements are rejected
+- Requested row counts are clamped to configured limits
+- `explain_query` wraps the input query on the server; callers do not pass raw
+  `EXPLAIN ...` statements
+- MySQL does not support `analyze=True` for `explain_query`
 
-补充说明：MySQL 首版不支持 `explain_query(..., analyze=True)`。
-
-## Typical use cases
-
-你可以把这个 MCP 暴露给 AI 助手做下面这些事。
-
-- 列出某个 PostgreSQL `schema` 下的表和视图
-- 列出某个 MySQL `database` 下的表
-- 查看表字段、主键、索引定义
-- 对只读查询执行 `EXPLAIN`
-- 抽样查看数据，帮助模型理解字段语义
+Audit logging covers the metadata and query paths, including metadata lookups,
+`run_select`, `explain_query`, and `get_table_sample`. `list_connections` is
+outside that path.
 
 ## Documentation
 
-如果你要深入了解行为、接入方式和团队规范，可以从这些文档开始。
+Start with these pages if you want the architecture, API contract, or client
+setup details.
 
-- `docs/project-overview.md`: 项目目标、核心概念、内部结构
-- `docs/api-reference.md`: MCP tools 参考
-- `docs/codex-setup.md`: Codex 接入步骤
-- `docs/opencode-setup.md`: OpenCode 接入步骤
-- `docs/git-workflow.md`: 仓库 Git 协作规范
+- [Project overview](docs/project-overview.md)
+- [API reference](docs/api-reference.md)
+- [Codex setup](docs/codex-setup.md)
+- [OpenCode setup](docs/opencode-setup.md)
+- [Chinese overview](docs/README.zh-CN.md)
 
-## Development
+## Contributing and roadmap
 
-如果你要在本地修改或验证项目，这里是最短路径。
+If you want to contribute or understand what is planned next, start with these
+project-level pages.
 
-```bash
-PYTHONPATH=. python3 -m unittest discover -s tests
-```
-
-项目入口在 `sql_query_mcp/app.py`，核心模块如下。
-
-- `sql_query_mcp/config.py`: 配置加载与校验
-- `sql_query_mcp/validator.py`: SQL 只读校验
-- `sql_query_mcp/introspection.py`: 元数据查询
-- `sql_query_mcp/executor.py`: 查询执行与限流
-- `sql_query_mcp/adapters/`: PostgreSQL / MySQL 适配层
-
-## Contributing
-
-当前仓库还没有独立的贡献指南。提交改动前，建议先阅读 `AGENT.md` 和
-`docs/git-workflow.md`，并确保相关测试通过。
+- [Contribution guide](CONTRIBUTING.md)
+- [Roadmap](docs/roadmap.md)
 
 ## License
 
-当前仓库未提供独立的 `LICENSE` 文件。如果你计划对外分发或商用，请先补齐
-许可证声明。
+This project is released under the MIT License.

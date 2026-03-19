@@ -3,6 +3,12 @@
 本文定义本仓库的 Git 分支模型、发布流程和 AI 协作边界。无论是人工开发，还
 是 AI 工具参与修改，都需要优先遵循这里的约束。
 
+> **English note:** This document remains the authoritative repo-specific Git
+> workflow guide. For most external contributions, branch from `develop`, use a
+> `feature/<name>` branch for normal work, and open your PR or MR back to
+> `develop`. Do not push directly to `main`, and use PRs or MRs for release and
+> hotfix merges.
+
 ## 文档目的
 
 这份规范的目标是统一协作方式，减少分支混乱、历史污染和发布回溯困难。
@@ -49,8 +55,8 @@ git checkout -b feature/query-audit-improvements
 1. 从 `develop` 创建 `release/<version>`。
 2. 在 `release` 分支完成版本号调整、最终测试和发布修复。
 3. 用 `release` 分支产物完成生产部署。
-4. 确认部署成功后，把 `release` 合并到 `main` 并打 tag。
-5. 再把同一个 `release` 分支回合并到 `develop`。
+4. 确认部署成功后，通过 PR 或 MR 把 `release` 合并到 `main` 并打 tag。
+5. 再把同一个 `release` 分支通过 PR 或 MR 回合并到 `develop`。
 
 示例命令如下。
 
@@ -62,19 +68,13 @@ git checkout -b release/v1.2.0
 
 发布完成后的关键同步步骤如下。
 
-```bash
-git checkout main
-git pull
-git merge --no-ff release/v1.2.0
-git tag -a v1.2.0 -m "Release version 1.2.0"
-git push
-git push --tags
+1. 创建 `release/v1.2.0 -> main` 的 PR 或 MR。
+2. 等待必要的评审、分支保护检查和 CI 通过后，再合并到 `main`。
+3. 在 `main` 的发布合并结果上创建 `v1.2.0` tag，并推送该 tag。
+4. 再创建 `release/v1.2.0 -> develop` 的 PR 或 MR，确保发布期间的整理提交回到开发线。
 
-git checkout develop
-git pull
-git merge --no-ff release/v1.2.0
-git push
-```
+如果仓库对 `main` 或 `develop` 启用了受保护分支规则，就按受保护分支流程完
+成，不要为了省步骤改成直接 push。
 
 ## 紧急修复流程
 
@@ -83,8 +83,11 @@ git push
 
 1. 从 `main` 创建 `hotfix/<issue-id>`。
 2. 在 `hotfix` 分支完成修复和验证。
-3. 合并回 `main` 并发布。
-4. 再把相同修复同步回 `develop`。
+3. 优先通过 `hotfix/* -> main` 的 PR 或 MR 合并回 `main` 并发布。
+4. 再通过 `hotfix/* -> develop` 的 PR 或 MR 同步相同修复回开发线。
+5. 如果当前已经存在仍在收口的 `release/*` 分支，优先再创建一个
+   `hotfix/* -> release/*` 的 PR 或 MR，把同一修复同步到该 `release/*`，
+   避免下一个正式发布丢失这次热修复。
 
 示例分支名如下。
 
@@ -127,7 +130,6 @@ git checkout -b customer/client-a v1.2.0
 ```bash
 git checkout customer/client-a
 git merge v1.3.0
-git merge-base customer/client-a v1.3.0
 ```
 
 ## 版本号和标签
