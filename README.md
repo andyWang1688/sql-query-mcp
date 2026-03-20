@@ -84,7 +84,7 @@ python -m pip install --upgrade pip
 pip install sql-query-mcp
 ```
 
-Install a specific release with `pip install sql-query-mcp==0.1.0` if you want
+Install a specific release with `pip install sql-query-mcp==X.Y.Z` if you want
 to pin a version. Published release artifacts are also attached to each GitHub
 Release.
 
