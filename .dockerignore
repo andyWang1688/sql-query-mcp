@@ -1,0 +1,26 @@
+.git/
+.gitignore
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.worktrees/
+.DS_Store
+
+# Sensitive config - mount at runtime instead
+config/connections.json
+logs/
+
+# Documentation not needed in image
+docs/
+*.md
+!README.md
+AGENT.md
+
+# Tests not needed in image
+tests/
