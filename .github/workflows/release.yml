@@ -136,7 +136,12 @@ jobs:
             RECOVERY_RUN=true
           fi
 
-          skip_upload=$(PYTHONPATH=. RECOVERY_RUN="$RECOVERY_RUN" PYPI_VERSION_EXISTS="$PYPI_VERSION_EXISTS" RECOVERY_CONFIRMED="$RECOVERY_CONFIRMED" python - <<'PY'
+          GITHUB_RELEASE_EXISTS=false
+          if gh release view "$EFFECTIVE_TAG" >/dev/null 2>&1; then
+            GITHUB_RELEASE_EXISTS=true
+          fi
+
+          skip_upload=$(PYTHONPATH=. RECOVERY_RUN="$RECOVERY_RUN" PYPI_VERSION_EXISTS="$PYPI_VERSION_EXISTS" RECOVERY_CONFIRMED="$RECOVERY_CONFIRMED" GITHUB_RELEASE_EXISTS="$GITHUB_RELEASE_EXISTS" python - <<'PY'
           from sql_query_mcp.release_metadata import should_skip_pypi_upload
           import os
 
@@ -146,6 +151,7 @@ jobs:
                   is_recovery_run=os.environ["RECOVERY_RUN"] == "true",
                   pypi_version_exists=os.environ["PYPI_VERSION_EXISTS"] == "true",
                   recovery_confirmed=os.environ["RECOVERY_CONFIRMED"] == "true",
+                  github_release_exists=os.environ["GITHUB_RELEASE_EXISTS"] == "true",
               )
               else "false"
           )
@@ -155,9 +161,11 @@ jobs:
             echo "skip_upload=$skip_upload"
             echo "pypi_version_exists=$PYPI_VERSION_EXISTS"
             echo "recovery_run=$RECOVERY_RUN"
+            echo "github_release_exists=$GITHUB_RELEASE_EXISTS"
           } >> "$GITHUB_OUTPUT"
           {
             echo "PyPI exists: $PYPI_VERSION_EXISTS"
+            echo "GitHub Release exists: $GITHUB_RELEASE_EXISTS"
             echo "Skip upload: $skip_upload"
           } >> "$GITHUB_STEP_SUMMARY"
 

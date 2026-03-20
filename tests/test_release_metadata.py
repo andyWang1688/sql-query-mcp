@@ -87,6 +87,7 @@ class ReleaseMetadataTestCase(unittest.TestCase):
                 is_recovery_run=True,
                 pypi_version_exists=True,
                 recovery_confirmed=True,
+                github_release_exists=False,
             )
         )
         self.assertFalse(
@@ -94,6 +95,27 @@ class ReleaseMetadataTestCase(unittest.TestCase):
                 is_recovery_run=True,
                 pypi_version_exists=False,
                 recovery_confirmed=True,
+                github_release_exists=False,
+            )
+        )
+
+    def test_should_skip_pypi_upload_for_rerun_after_release_exists(self) -> None:
+        self.assertTrue(
+            should_skip_pypi_upload(
+                is_recovery_run=False,
+                pypi_version_exists=True,
+                recovery_confirmed=False,
+                github_release_exists=True,
+            )
+        )
+
+    def test_should_skip_pypi_upload_requires_signal_when_release_missing(self) -> None:
+        self.assertFalse(
+            should_skip_pypi_upload(
+                is_recovery_run=False,
+                pypi_version_exists=True,
+                recovery_confirmed=False,
+                github_release_exists=False,
             )
         )
 

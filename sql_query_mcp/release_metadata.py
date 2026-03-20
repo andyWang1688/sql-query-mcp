@@ -60,8 +60,13 @@ def should_skip_pypi_upload(
     is_recovery_run: bool,
     pypi_version_exists: bool,
     recovery_confirmed: bool,
+    github_release_exists: bool,
 ) -> bool:
-    return is_recovery_run and pypi_version_exists and recovery_confirmed
+    if not pypi_version_exists:
+        return False
+    if is_recovery_run and recovery_confirmed:
+        return True
+    return github_release_exists
 
 
 def decide_backmerge_action(target: str, has_open_pr: bool, has_diff: bool) -> str:
