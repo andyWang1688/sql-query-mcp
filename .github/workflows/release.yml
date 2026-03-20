@@ -1,0 +1,229 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Recovery tag such as v0.2.0
+        required: true
+        type: string
+      pypi_already_published:
+        description: Confirm this is a post-publish recovery run
+        required: true
+        type: boolean
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.event.inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      EFFECTIVE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      GITHUB_TOKEN: ${{ github.token }}
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Preflight GitHub auth
+        run: |
+          if [ -z "$GITHUB_TOKEN" ] || [ -z "$GH_TOKEN" ]; then
+            echo "Missing GitHub authentication tokens." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Install release tooling
+        run: |
+          python -m pip install --upgrade pip build twine
+          pip install -e .
+
+      - name: Resolve release metadata
+        id: metadata
+        run: |
+          PYTHONPATH=. python -m sql_query_mcp.release_metadata --tag "$EFFECTIVE_TAG" --pyproject pyproject.toml > release-context.txt
+          cat release-context.txt >> "$GITHUB_STEP_SUMMARY"
+          while IFS='=' read -r key value; do
+            echo "$key=$value" >> "$GITHUB_OUTPUT"
+          done < release-context.txt
+
+      - name: Verify release branch ancestry
+        run: |
+          release_branch="${{ steps.metadata.outputs.release_branch }}"
+          fetched=0
+          for _ in 1 2 3 4 5; do
+            if git fetch origin "refs/heads/$release_branch:refs/remotes/origin/$release_branch"; then
+              fetched=1
+              break
+            fi
+            sleep 3
+          done
+          if [ "$fetched" -ne 1 ]; then
+            echo "Could not fetch $release_branch after retries." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$EFFECTIVE_TAG" "origin/$release_branch"; then
+            echo "Tag $EFFECTIVE_TAG is not reachable from $release_branch." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          tag_commit=$(git rev-list -n 1 "$EFFECTIVE_TAG")
+          branch_tip=$(git rev-parse "origin/$release_branch")
+          if [ "$tag_commit" != "$branch_tip" ]; then
+            echo "Tag $EFFECTIVE_TAG must point to the tip of $release_branch." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+
+      - name: Run tests and build artifacts
+        run: |
+          rm -rf build dist ./*.egg-info
+          PYTHONPATH=. python -m unittest discover -s tests
+          python -m build
+          python -m twine check dist/*
+          python -m venv .release-smoke
+          . .release-smoke/bin/activate
+          pip install dist/*.whl
+          sql-query-mcp --help
+          deactivate
+          rm -rf .release-smoke
+
+      - name: Check whether PyPI upload should be skipped
+        id: pypi_check
+        env:
+          RECOVERY_CONFIRMED: ${{ github.event.inputs.pypi_already_published || 'false' }}
+          EVENT_NAME: ${{ github.event_name }}
+          VERSION_TO_CHECK: ${{ steps.metadata.outputs.version }}
+        run: |
+          PYPI_VERSION_EXISTS=false
+          if VERSION_TO_CHECK="$VERSION_TO_CHECK" python - <<'PY'
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+
+          package = "sql-query-mcp"
+          version = os.environ["VERSION_TO_CHECK"]
+          url = f"https://pypi.org/pypi/{package}/json"
+          try:
+              with urllib.request.urlopen(url) as response:
+                  payload = json.load(response)
+          except urllib.error.HTTPError as exc:
+              if exc.code == 404:
+                  raise SystemExit(1)
+              raise
+          raise SystemExit(0 if version in payload["releases"] else 1)
+          PY
+          then
+            PYPI_VERSION_EXISTS=true
+          fi
+
+          RECOVERY_RUN=false
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            RECOVERY_RUN=true
+          fi
+
+          skip_upload=$(PYTHONPATH=. RECOVERY_RUN="$RECOVERY_RUN" PYPI_VERSION_EXISTS="$PYPI_VERSION_EXISTS" RECOVERY_CONFIRMED="$RECOVERY_CONFIRMED" python - <<'PY'
+          from sql_query_mcp.release_metadata import should_skip_pypi_upload
+          import os
+
+          print(
+              "true"
+              if should_skip_pypi_upload(
+                  is_recovery_run=os.environ["RECOVERY_RUN"] == "true",
+                  pypi_version_exists=os.environ["PYPI_VERSION_EXISTS"] == "true",
+                  recovery_confirmed=os.environ["RECOVERY_CONFIRMED"] == "true",
+              )
+              else "false"
+          )
+          PY
+          )
+          {
+            echo "skip_upload=$skip_upload"
+            echo "pypi_version_exists=$PYPI_VERSION_EXISTS"
+            echo "recovery_run=$RECOVERY_RUN"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "PyPI exists: $PYPI_VERSION_EXISTS"
+            echo "Skip upload: $skip_upload"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload to PyPI
+        if: steps.pypi_check.outputs.skip_upload != 'true'
+        env:
+          PYPI_API_TOKEN: ${{ secrets.PYPI_API_TOKEN }}
+        run: |
+          if [ -z "$PYPI_API_TOKEN" ]; then
+            echo "Missing PYPI_API_TOKEN for publish." | tee -a "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+          python -m twine upload --non-interactive -u __token__ -p "$PYPI_API_TOKEN" dist/*
+          echo "Published $EFFECTIVE_TAG to PyPI." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or update GitHub Release
+        env:
+          VERSION: ${{ steps.metadata.outputs.version }}
+        run: |
+          if ! gh release view "$EFFECTIVE_TAG" >/dev/null 2>&1; then
+            gh release create "$EFFECTIVE_TAG" dist/* --title "$EFFECTIVE_TAG" --generate-notes
+          fi
+          gh release view "$EFFECTIVE_TAG" --json body --jq '.body' > auto-notes.md
+          python - <<'PY'
+          from pathlib import Path
+          import os
+
+          notes_path = Path("auto-notes.md")
+          install_line = f"`pip install sql-query-mcp=={os.environ['VERSION']}`"
+          content = notes_path.read_text(encoding="utf-8")
+          if install_line not in content:
+              if content and not content.endswith("\n"):
+                  content += "\n"
+              content += f"\n## Install\n\n{install_line}\n"
+          Path("release-notes.md").write_text(content, encoding="utf-8")
+          PY
+          gh release upload "$EFFECTIVE_TAG" dist/* --clobber
+          gh release edit "$EFFECTIVE_TAG" --title "$EFFECTIVE_TAG" --notes-file release-notes.md
+          echo "GitHub Release ready for $EFFECTIVE_TAG." >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create or reuse back-merge PRs
+        env:
+          RELEASE_BRANCH: ${{ steps.metadata.outputs.release_branch }}
+        run: |
+          main_pr=$(gh pr list --head "$RELEASE_BRANCH" --base main --state all --json url,state,mergedAt --jq '.[0]')
+          if [ -n "$main_pr" ] && [ "$main_pr" != "null" ]; then
+            main_url=$(printf '%s' "$main_pr" | python -c 'import json,sys; print(json.load(sys.stdin)["url"])')
+            main_state=$(printf '%s' "$main_pr" | python -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+            echo "Existing main PR ($main_state): $main_url" >> "$GITHUB_STEP_SUMMARY"
+          else
+            gh pr create --base main --head "$RELEASE_BRANCH" --title "release: merge $EFFECTIVE_TAG into main" --body "Automated back-merge after publishing $EFFECTIVE_TAG."
+          fi
+
+          develop_pr=$(gh pr list --head "$RELEASE_BRANCH" --base develop --state all --json url,state,mergedAt --jq '.[0]')
+          if [ -n "$develop_pr" ] && [ "$develop_pr" != "null" ]; then
+            develop_url=$(printf '%s' "$develop_pr" | python -c 'import json,sys; print(json.load(sys.stdin)["url"])')
+            develop_state=$(printf '%s' "$develop_pr" | python -c 'import json,sys; print(json.load(sys.stdin)["state"])')
+            echo "Existing develop PR ($develop_state): $develop_url" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          git fetch origin develop
+          release_only_count=$(git rev-list --count "origin/develop..origin/$RELEASE_BRANCH")
+          if [ "$release_only_count" = "0" ]; then
+            echo "No develop back-merge PR needed." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          gh pr create --base develop --head "$RELEASE_BRANCH" --title "release: merge $EFFECTIVE_TAG back into develop" --body "Automated back-merge after publishing $EFFECTIVE_TAG."

@@ -8,17 +8,20 @@ PostgreSQL / MySQL 查询入口。
 
 ## Quick start
 
-如果你想先跑起来再看细节，可以按下面的顺序完成最小接入。
+如果你想先跑起来再看细节，可以按下面的顺序完成最小接入。默认安装路径现在
+是 PyPI，而不是先 clone 仓库。
 
-1. 创建虚拟环境并安装项目。
+1. 使用 Python 3.10+ 创建虚拟环境并安装项目。
 
 ```bash
-cd /absolute/path/to/sql-query-mcp
 python3.10 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install -e .
+pip install sql-query-mcp
 ```
+
+如果你要安装固定版本，可以直接执行：`pip install sql-query-mcp==0.1.0`。
+每个正式版本也会同步附在 GitHub Releases 中，方便回溯和下载构建产物。
 
 2. 复制示例配置。
 
@@ -37,6 +40,9 @@ export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
 
 - Codex: 见 `docs/codex-setup.md`
 - OpenCode: 见 `docs/opencode-setup.md`
+
+补充说明：PyPI 安装名是 `sql-query-mcp`，Python 包导入路径是
+`sql_query_mcp`。
 
 ## What it does
 
@@ -155,13 +161,19 @@ export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
 - `docs/api-reference.md`: MCP tools 参考
 - `docs/codex-setup.md`: Codex 接入步骤
 - `docs/opencode-setup.md`: OpenCode 接入步骤
+- `docs/release-process.md`: 发布到 PyPI 和 GitHub Release 的流程
 - `docs/git-workflow.md`: 仓库 Git 协作规范
 
 ## Development
 
-如果你要在本地修改或验证项目，这里是最短路径。
+如果你要在本地修改或验证项目，这里是最短路径。这里保留 editable install，
+供开发者调试和发布前验证使用。开发环境同样要求 Python 3.10+。
 
 ```bash
+python3.10 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e .
 PYTHONPATH=. python3 -m unittest discover -s tests
 ```
 
@@ -180,5 +192,4 @@ PYTHONPATH=. python3 -m unittest discover -s tests
 
 ## License
 
-当前仓库未提供独立的 `LICENSE` 文件。如果你计划对外分发或商用，请先补齐
-许可证声明。
+本项目使用 MIT License，完整文本见 `LICENSE`。
