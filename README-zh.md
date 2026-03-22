@@ -64,37 +64,52 @@ MySQL 在当前实现中支持 `explain_query`，但不支持
 
 ## 快速开始
 
-如果你想先把服务跑起来，之后再继续了解其余部分，可以按以下步骤进行。
+`sql-query-mcp` 提供两种官方支持的 PyPI 接入方式。两种都适合正式使用，不
+只是本地试跑。
 
-1. 创建虚拟环境并安装项目。
+1. 先决定让 MCP 客户端如何启动服务。
 
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install -e .
-```
-
-2. 复制示例连接配置。
+如果你希望先安装一次，之后在客户端里直接调用命令，可以使用安装命令模式。
 
 ```bash
-cp config/connections.example.json config/connections.json
+pipx install sql-query-mcp
 ```
 
-3. 设置用于保存数据库 DSN 的环境变量。
+如果你希望把包来源直接写进 MCP 配置，让客户端通过 `pipx` 启动服务，可以使
+用托管启动模式。
 
 ```bash
-export PG_CONN_CRM_PROD_MUQIAO_RO='postgresql://user:password@host:5432/dbname'
-export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
+pipx run --spec sql-query-mcp sql-query-mcp
 ```
 
-4. 在你的 MCP 客户端中注册这个服务。
+如果你想固定版本，可使用 `pipx install 'sql-query-mcp==X.Y.Z'`，或者使用
+`pipx run --spec 'sql-query-mcp==X.Y.Z' sql-query-mcp`。已安装版本可通过
+`pipx upgrade sql-query-mcp` 升级。
+
+2. 创建配置文件。
+
+无论你选择哪种启动方式，都建议把服务配置文件放在仓库之外，便于统一维护。
+
+```bash
+mkdir -p ~/.config/sql-query-mcp
+```
+
+然后把本节后面的示例 JSON 保存为
+`~/.config/sql-query-mcp/connections.json`。
+
+3. 在你的 MCP 客户端中注册这个服务。
 
 - Codex: `docs/codex-setup.md`
 - OpenCode: `docs/opencode-setup.md`
 
-默认配置路径是 `config/connections.json`。如果你需要使用其他位置，请设置
-`SQL_QUERY_MCP_CONFIG`。
+安装命令模式表示客户端直接运行 `sql-query-mcp`。托管启动模式表示客户端通
+过 `pipx run` 启动服务。
+
+无论使用哪种方式，都建议把 `SQL_QUERY_MCP_CONFIG` 和真实数据库 DSN 放在
+MCP 客户端的 `env` 或 `environment` 配置里，而不是单独在 shell 中导出。
+
+对于 `pipx install` 和 `pipx run`，建议显式设置 `SQL_QUERY_MCP_CONFIG`。
+默认的 `config/connections.json` 更适合源码 checkout 和本地开发场景。
 
 示例配置如下。
 
@@ -107,24 +122,24 @@ export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
   },
   "connections": [
     {
-      "connection_id": "crm_prod_muqiao_ro",
+      "connection_id": "crm_prod_main_ro",
       "engine": "postgres",
-      "label": "CRM PostgreSQL production / Muqiao / read-only",
+      "label": "CRM PostgreSQL production / Main / read-only",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_schema": "public"
     },
     {
-      "connection_id": "crm_mysql_prod_muqiao_ro",
+      "connection_id": "crm_mysql_prod_main_ro",
       "engine": "mysql",
-      "label": "CRM MySQL production / Muqiao / read-only",
+      "label": "CRM MySQL production / Main / read-only",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "MYSQL_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_database": "crm"
     }
