@@ -20,7 +20,7 @@
 
 - 连接配置和真实 DSN 分离，DSN 只通过环境变量注入
 - `engine` 必须显式声明，不从 `connection_id` 推断
-- PostgreSQL 使用 `schema`，MySQL 使用 `database`
+- PostgreSQL 和 MySQL 保留各自原生的命名空间概念与默认值字段
 - 工具执行前先过只读 SQL 校验
 - 每次调用都记录审计日志
 
@@ -33,8 +33,8 @@
 每个连接都由 `connection_id` 唯一标识，并声明自己的数据库引擎、环境、租
 户、角色和 DSN 环境变量名。
 
-服务默认读取 `config/connections.json`，也支持通过
-`SQL_QUERY_MCP_CONFIG` 指向自定义路径。
+源码运行时，服务默认读取 `config/connections.json`。通过 PyPI 接入时，推荐
+显式使用 `SQL_QUERY_MCP_CONFIG` 指向你自己的配置文件路径。
 
 实现上，这部分由 `sql_query_mcp/config.py` 负责加载和校验。
 
@@ -43,8 +43,8 @@
 项目不会把 PostgreSQL 和 MySQL 粗暴映射成同一个抽象命名空间，而是保留
 各自的原生概念。
 
-- PostgreSQL: 使用 `schema`
-- MySQL: 使用 `database`
+- PostgreSQL: 使用 `schema`，默认值字段为 `default_schema`
+- MySQL: 使用 `database`，默认值字段为 `default_database`
 
 服务会在进入数据库前完成参数合法性校验和默认值回退。
 

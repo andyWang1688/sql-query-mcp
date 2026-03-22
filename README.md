@@ -72,42 +72,51 @@ implementation.
 
 ## Quick start
 
-If you want to get the server running first and explore the rest later, follow
-these steps.
+`sql-query-mcp` supports two official PyPI-based setup modes. Both are intended
+for real usage, not just local testing.
 
-1. Create a virtual environment and install the project.
+1. Choose how you want your MCP client to start the server.
 
-```bash
-python3.10 -m venv .venv
-source .venv/bin/activate
-python -m pip install --upgrade pip
-pip install sql-query-mcp
-```
-
-Install a specific release with `pip install sql-query-mcp==X.Y.Z` if you want
-to pin a version. Published release artifacts are also attached to each GitHub
-Release.
-
-2. Copy the example connection config.
+Use installed command mode if you want a simple local command after one
+install.
 
 ```bash
-cp config/connections.example.json config/connections.json
+pipx install sql-query-mcp
 ```
 
-3. Export your database DSNs as environment variables.
-
-These example names match the copied `config/connections.example.json` file.
+Use managed launch mode if you want the package source declared directly in
+your MCP client config.
 
 ```bash
-export PG_CONN_CRM_PROD_MUQIAO_RO='postgresql://user:password@host:5432/dbname'
-export MYSQL_CONN_CRM_PROD_MUQIAO_RO='mysql://user:password@host:3306/crm'
-export SQL_QUERY_MCP_CONFIG='/absolute/path/to/sql-query-mcp/config/connections.json'
+pipx run --spec sql-query-mcp sql-query-mcp
 ```
 
-4. Register the server in your MCP client.
+Pin a version with `pipx install 'sql-query-mcp==X.Y.Z'` or
+`pipx run --spec 'sql-query-mcp==X.Y.Z' sql-query-mcp`. Upgrade installed
+command mode with `pipx upgrade sql-query-mcp`.
+
+2. Create a config file.
+
+The server configuration should live outside the repository so the same file
+works with either startup mode.
+
+```bash
+mkdir -p ~/.config/sql-query-mcp
+```
+
+Then save the example JSON later in this section as
+`~/.config/sql-query-mcp/connections.json`.
+
+3. Register the server in your MCP client.
 
 - Codex: `docs/codex-setup.md` (Chinese)
 - OpenCode: `docs/opencode-setup.md` (Chinese)
+
+Installed command mode means your client runs `sql-query-mcp` directly.
+Managed launch mode means your client starts the server through `pipx run`.
+
+In both modes, put `SQL_QUERY_MCP_CONFIG` and your real database DSNs in the
+MCP client's environment block instead of exporting them in your shell.
 
 The console entry point is `sql-query-mcp`, which maps to
 `sql_query_mcp.app:main`.
@@ -115,8 +124,9 @@ The console entry point is `sql-query-mcp`, which maps to
 The PyPI install name is `sql-query-mcp`, and the Python package import path is
 `sql_query_mcp`.
 
-The default config path is `config/connections.json`. If you need a different
-location, set `SQL_QUERY_MCP_CONFIG`.
+For `pipx install` and `pipx run`, set `SQL_QUERY_MCP_CONFIG` explicitly to
+your config file path. The default `config/connections.json` path is mainly for
+source checkouts and local development.
 
 The example config looks like this.
 
@@ -129,24 +139,24 @@ The example config looks like this.
   },
   "connections": [
     {
-      "connection_id": "crm_prod_muqiao_ro",
+      "connection_id": "crm_prod_main_ro",
       "engine": "postgres",
-      "label": "CRM PostgreSQL production / Muqiao / read-only",
+      "label": "CRM PostgreSQL production / Main / read-only",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_schema": "public"
     },
     {
-      "connection_id": "crm_mysql_prod_muqiao_ro",
+      "connection_id": "crm_mysql_prod_main_ro",
       "engine": "mysql",
-      "label": "CRM MySQL production / Muqiao / read-only",
+      "label": "CRM MySQL production / Main / read-only",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "MYSQL_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_database": "crm"
     }
