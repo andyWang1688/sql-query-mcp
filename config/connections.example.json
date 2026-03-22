@@ -6,24 +6,24 @@
   },
   "connections": [
     {
-      "connection_id": "crm_prod_muqiao_ro",
+      "connection_id": "crm_prod_main_ro",
       "engine": "postgres",
-      "label": "CRM PostgreSQL 生产库 / 穆桥 / 只读",
+      "label": "CRM PostgreSQL 生产库 / Main / 只读",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "PG_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "PG_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_schema": "public"
     },
     {
-      "connection_id": "crm_mysql_prod_muqiao_ro",
+      "connection_id": "crm_mysql_prod_main_ro",
       "engine": "mysql",
-      "label": "CRM MySQL 生产库 / 穆桥 / 只读",
+      "label": "CRM MySQL 生产库 / Main / 只读",
       "env": "prod",
-      "tenant": "muqiao",
+      "tenant": "main",
       "role": "ro",
-      "dsn_env": "MYSQL_CONN_CRM_PROD_MUQIAO_RO",
+      "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_database": "crm"
     }
