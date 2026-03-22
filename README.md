@@ -5,6 +5,8 @@
 A general-purpose MCP server that lets AI work with multiple databases within
 clear boundaries.
 
+[![sql-query-mcp MCP server](https://glama.ai/mcp/servers/andyWang1688/sql-query-mcp/badges/card.svg)](https://glama.ai/mcp/servers/andyWang1688/sql-query-mcp)
+
 ## Current database support
 
 | Database | Status | Current availability |
