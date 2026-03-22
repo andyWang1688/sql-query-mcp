@@ -50,7 +50,8 @@ git push origin vX.Y.Z
 PyPI 和 GitHub Release。
 
 - 在 PyPI 上确认目标版本已经可见。
-- 确认 `pip install sql-query-mcp==X.Y.Z` 可用。
+- 确认 `pipx install 'sql-query-mcp==X.Y.Z'` 可用，或确认
+  `pipx run --spec 'sql-query-mcp==X.Y.Z' sql-query-mcp` 可启动。
 - 在 GitHub 上确认 `vX.Y.Z` Release 已创建。
 - 确认 Release 附件包含 `sdist` 和 `wheel`。
 
