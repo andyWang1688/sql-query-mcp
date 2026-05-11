@@ -115,6 +115,14 @@ class MySQLAdapter:
             f"{self._quote_identifier(table_name)} LIMIT {int(sentinel_limit)}"
         )
 
+    def build_insert_query(self, database: str, table_name: str, columns: List[str]) -> str:
+        quoted_columns = ", ".join(self._quote_identifier(column) for column in columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        return (
+            f"INSERT INTO {self._quote_identifier(database)}."
+            f"{self._quote_identifier(table_name)} ({quoted_columns}) VALUES ({placeholders})"
+        )
+
     def build_explain_query(self, sql_text: str, analyze: bool = False) -> str:
         if analyze:
             raise SecurityError("MySQL 首版不支持 analyze=True。")

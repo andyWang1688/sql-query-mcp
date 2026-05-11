@@ -10,6 +10,7 @@ from .audit import AuditLogger
 from .config import load_config
 from .errors import SqlQueryMCPError
 from .executor import QueryExecutor
+from .importer import TableFileImporter
 from .introspection import MetadataService
 from .registry import ConnectionRegistry
 
@@ -20,6 +21,7 @@ def create_app() -> FastMCP:
     audit_logger = AuditLogger(app_config.settings.audit_log_path)
     metadata = MetadataService(registry, app_config.settings, audit_logger)
     executor = QueryExecutor(registry, app_config.settings, audit_logger)
+    importer = TableFileImporter(registry, app_config.settings, audit_logger)
 
     mcp = FastMCP("sql-query-mcp", json_response=True)
 
@@ -85,6 +87,28 @@ def create_app() -> FastMCP:
         """Fetch a small sample from a table for schema discovery."""
 
         return _run_tool(lambda: executor.get_table_sample(connection_id, table_name, schema, database, limit))
+
+    @mcp.tool()
+    def import_table_file(
+        connection_id: str,
+        table_name: str,
+        file_path: str,
+        schema: Optional[str] = None,
+        database: Optional[str] = None,
+        sheet_name: Optional[str] = None,
+    ) -> dict:
+        """Import a local CSV or XLSX file into an existing table."""
+
+        return _run_tool(
+            lambda: importer.import_table_file(
+                connection_id,
+                table_name,
+                file_path,
+                schema,
+                database,
+                sheet_name,
+            )
+        )
 
     return mcp
 

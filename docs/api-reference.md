@@ -4,8 +4,8 @@
 tool 的适用范围、参数、返回结果和使用示例，用它来编写客户端提示词或核对
 接入测试。
 
-这些 tools 面向 AI 的多数据库发现、结构理解和受控查询流程，并在明确边界内
-保留当前 API 中与 PostgreSQL、MySQL 相关的实际行为差异。
+这些 tools 面向 AI 的多数据库发现、结构理解、受控查询流程和受控文件导入，
+并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 相关的实际行为差异。
 
 ## 响应约定
 
@@ -305,15 +305,59 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 }
 ```
 
+## `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)`
+
+这个工具把 MCP server 本机路径上的 CSV 或 XLSX 文件导入到已有表。它是受控
+写入入口，不接受原始 SQL，也不做字段映射、清洗、upsert、merge 或多表导
+入。
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `connection_id` | string | Yes | 连接 ID |
+| `table_name` | string | Yes | 已存在的目标表名 |
+| `file_path` | string | Yes | MCP server 本机可访问的 CSV/XLSX 文件路径 |
+| `schema` | string | PostgreSQL conditional | PostgreSQL schema 名称 |
+| `database` | string | MySQL conditional | MySQL database 名称 |
+| `sheet_name` | string | No | XLSX sheet 名称；不传时读取第一个 sheet |
+
+**Response:**
+
+- `200`: 返回导入目标、文件类型、sheet 名称和 `inserted_row_count`
+- Error: 只支持 `.csv` 和 `.xlsx` 文件
+- Error: 文件表头为空、重复，或包含目标表不存在的字段时会被拒绝
+- Error: 文件没有数据行时会被拒绝
+- Error: XLSX 指定的 `sheet_name` 不存在时会被拒绝
+- Error: 数据库约束失败时会回滚并返回脱敏后的数据库错误
+
+文件表头必须精确匹配目标表字段名，但可以只提供部分字段。未提供的字段交给
+数据库处理，例如自增、默认值、可空字段或约束失败。
+
+**Example:**
+
+```json
+{
+  "connection_id": "crm_mysql_prod_main_rw",
+  "engine": "mysql",
+  "database": "crm",
+  "table_name": "users",
+  "inserted_row_count": 2,
+  "duration_ms": 24,
+  "file_extension": ".xlsx",
+  "sheet_name": "Users"
+}
+```
+
 ## 常见调用建议
 
-如果你是给 AI 写提示词，建议按“先结构，后查询”的顺序调用，能明显减少无
-效 SQL 和错误重试。
+如果你是给 AI 写提示词，建议按“先结构，后查询或导入”的顺序调用，能明显
+减少无效 SQL、错误导入和错误重试。
 
 1. 先调用 `list_connections()` 确认连接 ID。
 2. 再调用 `list_schemas()` 或 `list_databases()` 确认命名空间。
 3. 然后调用 `list_tables()` 和 `describe_table()` 理解结构。
-4. 最后再调用 `run_select()` 或 `explain_query()`。
+4. 最后再调用 `run_select()`、`explain_query()` 或 `import_table_file()`。
 
 ## Next steps
 
