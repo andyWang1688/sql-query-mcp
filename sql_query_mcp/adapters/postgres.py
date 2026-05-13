@@ -155,6 +155,16 @@ class PostgresAdapter:
             sql.Literal(sentinel_limit),
         )
 
+    def build_insert_query(self, schema: str, table_name: str, columns: List[str]):
+        if sql is None:
+            raise ConfigurationError("缺少 psycopg 依赖，请先安装项目依赖。")
+        return sql.SQL("INSERT INTO {}.{} ({}) VALUES ({})").format(
+            sql.Identifier(schema),
+            sql.Identifier(table_name),
+            sql.SQL(", ").join(sql.Identifier(column) for column in columns),
+            sql.SQL(", ").join(sql.Placeholder() for _ in columns),
+        )
+
     def build_explain_query(self, sql_text: str, analyze: bool = False) -> str:
         return f"EXPLAIN (FORMAT JSON, ANALYZE {'TRUE' if analyze else 'FALSE'}) {sql_text}"
 

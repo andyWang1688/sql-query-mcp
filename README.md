@@ -5,6 +5,8 @@
 A general-purpose MCP server that lets AI work with multiple databases within
 clear boundaries.
 
+[![sql-query-mcp MCP server](https://glama.ai/mcp/servers/andyWang1688/sql-query-mcp/badges/card.svg)](https://glama.ai/mcp/servers/andyWang1688/sql-query-mcp)
+
 ## Current database support
 
 | Database | Status | Current availability |
@@ -26,9 +28,10 @@ without exposing raw connection strings or flattening engine-specific concepts.
 
 ## What AI can do with it
 
-The current tool set focuses on database discovery and controlled query
-workflows. You can use it to help an AI assistant understand structure before
-it generates or refines SQL.
+The current tool set focuses on database discovery, controlled query workflows,
+and one narrow local file import path. You can use it to help an AI assistant
+understand structure before it generates SQL or imports a prepared CSV/XLSX file
+into an existing table.
 
 MySQL supports `explain_query`, but not `explain_query(..., analyze=True)` in
 the current implementation.
@@ -43,16 +46,18 @@ the current implementation.
 | `run_select(connection_id, sql, limit?)` | Yes | Yes | Run read-only queries |
 | `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Inspect query plans |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Fetch small table samples |
+| `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | Yes | Yes | Import local CSV/XLSX files |
 
 These tools are useful for tasks such as listing namespaces, inspecting table
-definitions, reviewing indexes, sampling records, and analyzing read-only
-queries with `EXPLAIN`. For full request and response details, see
-`docs/api-reference.md` (Chinese).
+definitions, reviewing indexes, sampling records, analyzing read-only queries
+with `EXPLAIN`, and importing prepared local files. For full request and
+response details, see `docs/api-reference.md` (Chinese).
 
 ## How boundaries are constrained
 
 The product boundary is intentionally narrow today. Only PostgreSQL and MySQL
-are available today, and the current tool set is fully read-only.
+are available today. Query tools remain read-only, and the only write path is a
+controlled local CSV/XLSX import into existing tables.
 
 The service keeps those boundaries explicit in a few ways.
 
@@ -66,6 +71,8 @@ The service keeps those boundaries explicit in a few ways.
   database.
 - The server accepts only `SELECT` and `WITH ... SELECT`, rejects comments and
   multi-statement input, and records audit logs for each call.
+- `import_table_file` doesn't accept raw SQL. It inserts only file columns whose
+  headers exactly match existing table columns.
 
 For MySQL, `explain_query(..., analyze=True)` is not available in the current
 implementation.

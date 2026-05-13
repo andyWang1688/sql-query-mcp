@@ -73,6 +73,26 @@ class ValidatorTestCase(unittest.TestCase):
         )
         self.assertEqual({"query_block": {"select_id": 1}}, plan)
 
+    def test_postgres_build_insert_query_quotes_identifiers(self) -> None:
+        query = PostgresAdapter().build_insert_query(
+            "public", "orders", ["order", "status"]
+        )
+
+        self.assertEqual(
+            'INSERT INTO "public"."orders" ("order", "status") VALUES (%s, %s)',
+            query.as_string(None),
+        )
+
+    def test_mysql_build_insert_query_quotes_identifiers(self) -> None:
+        query = MySQLAdapter().build_insert_query(
+            "crm", "orders", ["order", "status"]
+        )
+
+        self.assertEqual(
+            "INSERT INTO `crm`.`orders` (`order`, `status`) VALUES (%s, %s)",
+            query,
+        )
+
     def test_mysql_indexes_are_normalized(self) -> None:
         indexes = MySQLAdapter()._normalize_indexes(
             [

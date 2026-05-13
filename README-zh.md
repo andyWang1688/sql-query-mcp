@@ -25,8 +25,9 @@
 
 ## AI 能用它做什么
 
-当前这组工具主要面向数据库发现和受控查询流程。你可以用它帮助 AI 助手先
-理解结构，再生成或改写 SQL。
+当前这组工具主要面向数据库发现、受控查询流程，以及一个边界很窄的本地文
+件导入入口。你可以用它帮助 AI 助手先理解结构，再生成 SQL 或把准备好的
+CSV/XLSX 文件导入到已有表。
 
 MySQL 在当前实现中支持 `explain_query`，但不支持
 `explain_query(..., analyze=True)`。
@@ -41,14 +42,16 @@ MySQL 在当前实现中支持 `explain_query`，但不支持
 | `run_select(connection_id, sql, limit?)` | 是 | 是 | 运行只读查询 |
 | `explain_query(connection_id, sql, analyze?)` | 是 | 是 | 查看查询计划 |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | 是 | 是 | 获取小规模表样本 |
+| `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | 是 | 是 | 导入本地 CSV/XLSX 文件 |
 
-这些工具适合用于列出命名空间、检查表定义、查看索引、采样记录，以及用
-`EXPLAIN` 分析只读查询。完整的请求和响应细节见 `docs/api-reference.md`。
+这些工具适合用于列出命名空间、检查表定义、查看索引、采样记录、用
+`EXPLAIN` 分析只读查询，以及导入准备好的本地文件。完整的请求和响应细节
+见 `docs/api-reference.md`。
 
 ## 边界如何被清晰限定
 
-当前产品边界刻意保持得比较清晰。现在只有 PostgreSQL 和 MySQL 已经可用，
-而且当前工具集完全是只读的。
+当前产品边界刻意保持得比较清晰。现在只有 PostgreSQL 和 MySQL 已经可用。
+查询工具仍然是只读的，唯一写入入口是受控的本地 CSV/XLSX 文件导入。
 
 服务通过以下几种方式明确这些边界。
 
@@ -59,6 +62,8 @@ MySQL 在当前实现中支持 `explain_query`，但不支持
 - 查询执行在到达数据库之前会先经过 `sqlglot` 校验。
 - 服务只接受 `SELECT` 和 `WITH ... SELECT`，拒绝注释和多语句输入，并为每次
   调用记录审计日志。
+- `import_table_file` 不接受原始 SQL，只插入表头能精确匹配目标表字段的文件
+  列。
 
 对 MySQL 而言，`explain_query(..., analyze=True)` 在当前实现中不可用。
 
