@@ -124,6 +124,28 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual(2, records[0]["row_count"])
         self.assertEqual(".csv", records[0]["extra"]["file_extension"])
 
+    def test_import_csv_strips_utf8_bom_from_first_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(
+                Path(temp_dir) / "users.csv",
+                [["id", "name"], ["1", "Alice"]],
+                encoding="utf-8-sig",
+            )
+            conn = _ConnectionStub()
+            importer = _build_importer(Path(temp_dir) / "audit.jsonl", conn)
+
+            result = importer.import_table_file(
+                "crm_mysql_prod_main_rw",
+                "users",
+                str(csv_path),
+            )
+
+        self.assertEqual(1, result["inserted_row_count"])
+        self.assertEqual(
+            [("insert crm.users (id,name)", [("1", "Alice")])],
+            conn.cursor_stub.executed_many,
+        )
+
     def test_import_csv_rejects_unknown_header_before_insert(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = _write_csv(Path(temp_dir) / "users.csv", [["missing"], ["x"]])
@@ -279,8 +301,8 @@ def _build_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
     )
 
 
-def _write_csv(path: Path, rows: list[list[str]]) -> Path:
-    with path.open("w", encoding="utf-8", newline="") as handle:
+def _write_csv(path: Path, rows: list[list[str]], encoding: str = "utf-8") -> Path:
+    with path.open("w", encoding=encoding, newline="") as handle:
         writer = csv.writer(handle)
         writer.writerows(rows)
     return path

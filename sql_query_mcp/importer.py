@@ -125,7 +125,7 @@ def _read_file(path: Path, sheet_name: Optional[str]) -> Tuple[List[str], List[T
 
 
 def _read_csv(path: Path) -> Tuple[List[str], List[Tuple[object, ...]], Optional[str]]:
-    with path.open("r", encoding="utf-8", newline="") as handle:
+    with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
         try:
             headers = next(reader)
