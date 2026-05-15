@@ -155,6 +155,29 @@ class MetadataServiceTestCase(unittest.TestCase):
                 service.list_databases(config.connection_id)
             self.assertEqual(0, service._registry.connection_calls)
 
+    def test_list_databases_accepts_hive_connections(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="default",
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            service = MetadataService(
+                registry=_RegistryStub(config, _AdapterStub()),
+                settings=ServerSettings(audit_log_path=Path(temp_dir) / "audit.jsonl"),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = service.list_databases(config.connection_id)
+
+        self.assertEqual("hive", result["engine"])
+        self.assertEqual(["crm"], result["databases"])
+
     def test_list_tables_rejects_invalid_namespace_before_connecting(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_prod_main_ro",

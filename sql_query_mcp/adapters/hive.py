@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator
+from typing import Iterator, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 try:
@@ -34,6 +34,59 @@ class HiveAdapter:
     def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
         return None
 
+    def list_databases(self, conn: object) -> List[str]:
+        with conn.cursor() as cur:
+            cur.execute("SHOW DATABASES")
+            return [self._first_value(row) for row in cur.fetchall()]
+
+    def list_tables(self, conn: object, database: str):
+        with conn.cursor() as cur:
+            cur.execute(f"SHOW TABLES IN {self._quote_identifier(database)}")
+            return [
+                {
+                    "database_name": database,
+                    "table_name": self._first_value(row),
+                    "table_type": None,
+                }
+                for row in cur.fetchall()
+            ]
+
+    def describe_table(self, conn: object, database: str, table_name: str):
+        with conn.cursor() as cur:
+            cur.execute(f"DESCRIBE {self._qualified_table(database, table_name)}")
+            rows = cur.fetchall()
+
+        columns = []
+        in_partitions = False
+        for row in rows:
+            name = self._first_value(row)
+            if not name:
+                continue
+            if str(name).startswith("# Partition Information"):
+                in_partitions = True
+                continue
+            if str(name).startswith("#"):
+                continue
+            values = self._row_values(row)
+            data_type = values[1] if len(values) > 1 else None
+            comment = values[2] if len(values) > 2 else None
+            columns.append(
+                {
+                    "column_name": name,
+                    "data_type": data_type,
+                    "udt_name": None,
+                    "nullable": True,
+                    "default": None,
+                    "primary_key": False,
+                    "extra": comment,
+                    "partition_key": in_partitions,
+                }
+            )
+
+        if not columns:
+            return None
+        return {"columns": columns, "indexes": []}
+
     def _parse_dsn(self, dsn: str) -> dict:
         parsed = urlparse(dsn)
         if parsed.scheme not in {"hive", "hive+pyhive"}:
@@ -61,3 +114,13 @@ class HiveAdapter:
 
     def _qualified_table(self, database: str, table_name: str) -> str:
         return f"{self._quote_identifier(database)}.{self._quote_identifier(table_name)}"
+
+    def _first_value(self, row):
+        if isinstance(row, dict):
+            return next(iter(row.values()))
+        return row[0]
+
+    def _row_values(self, row):
+        if isinstance(row, dict):
+            return list(row.values())
+        return list(row)

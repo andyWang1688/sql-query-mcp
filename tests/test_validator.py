@@ -14,6 +14,32 @@ from sql_query_mcp.adapters.postgres import PostgresAdapter
 from sql_query_mcp.errors import SecurityError
 
 
+class _HiveCursorStub:
+    def __init__(self, rows) -> None:
+        self._rows = rows
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, sql: str) -> None:
+        self.executed.append(sql)
+
+    def fetchall(self):
+        return self._rows
+
+
+class _HiveConnectionStub:
+    def __init__(self, rows) -> None:
+        self.cursor_stub = _HiveCursorStub(rows)
+
+    def cursor(self) -> _HiveCursorStub:
+        return self.cursor_stub
+
+
 class ValidatorTestCase(unittest.TestCase):
     def test_accepts_plain_select(self) -> None:
         self.assertEqual("SELECT 1", validate_select_sql("SELECT 1;", "postgres"))
@@ -93,6 +119,79 @@ class ValidatorTestCase(unittest.TestCase):
             "`default`.`orders``2026`",
             HiveAdapter()._qualified_table("default", "orders`2026"),
         )
+
+    def test_hive_list_databases_uses_show_databases(self) -> None:
+        conn = _HiveConnectionStub([("default",), ("analytics",)])
+
+        databases = HiveAdapter().list_databases(conn)
+
+        self.assertEqual(["default", "analytics"], databases)
+        self.assertEqual(["SHOW DATABASES"], conn.cursor_stub.executed)
+
+    def test_hive_list_tables_returns_normalized_rows(self) -> None:
+        conn = _HiveConnectionStub([("orders",), ("customers",)])
+
+        tables = HiveAdapter().list_tables(conn, "analytics")
+
+        self.assertEqual(
+            [
+                {"database_name": "analytics", "table_name": "orders", "table_type": None},
+                {"database_name": "analytics", "table_name": "customers", "table_type": None},
+            ],
+            tables,
+        )
+        self.assertEqual(["SHOW TABLES IN `analytics`"], conn.cursor_stub.executed)
+
+    def test_hive_describe_table_returns_columns_and_empty_indexes(self) -> None:
+        conn = _HiveConnectionStub(
+            [
+                ("id", "int", ""),
+                ("name", "string", "customer name"),
+                ("", None, None),
+                ("# Partition Information", None, None),
+                ("# col_name", "data_type", "comment"),
+                ("dt", "string", "partition date"),
+            ]
+        )
+
+        description = HiveAdapter().describe_table(conn, "analytics", "orders")
+
+        self.assertEqual(
+            [
+                {
+                    "column_name": "id",
+                    "data_type": "int",
+                    "udt_name": None,
+                    "nullable": True,
+                    "default": None,
+                    "primary_key": False,
+                    "extra": "",
+                    "partition_key": False,
+                },
+                {
+                    "column_name": "name",
+                    "data_type": "string",
+                    "udt_name": None,
+                    "nullable": True,
+                    "default": None,
+                    "primary_key": False,
+                    "extra": "customer name",
+                    "partition_key": False,
+                },
+                {
+                    "column_name": "dt",
+                    "data_type": "string",
+                    "udt_name": None,
+                    "nullable": True,
+                    "default": None,
+                    "primary_key": False,
+                    "extra": "partition date",
+                    "partition_key": True,
+                },
+            ],
+            description["columns"],
+        )
+        self.assertEqual([], description["indexes"])
 
     def test_mysql_explain_plan_is_parsed_to_structured_json(self) -> None:
         plan = MySQLAdapter().extract_plan(
