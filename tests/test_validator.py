@@ -8,6 +8,7 @@ from sql_query_mcp.validator import (
     clamp_limit,
     validate_select_sql,
 )
+from sql_query_mcp.adapters.hive import HiveAdapter
 from sql_query_mcp.adapters.mysql import MySQLAdapter
 from sql_query_mcp.adapters.postgres import PostgresAdapter
 from sql_query_mcp.errors import SecurityError
@@ -66,6 +67,28 @@ class ValidatorTestCase(unittest.TestCase):
     def test_mysql_explain_rejects_analyze(self) -> None:
         with self.assertRaises(SecurityError):
             MySQLAdapter().build_explain_query("SELECT 1", analyze=True)
+
+    def test_hive_parse_dsn_uses_hiveserver2_defaults(self) -> None:
+        options = HiveAdapter()._parse_dsn(
+            "hive://alice:secret@hive.example.com:10000/analytics?auth=CUSTOM"
+        )
+
+        self.assertEqual("hive.example.com", options["host"])
+        self.assertEqual(10000, options["port"])
+        self.assertEqual("alice", options["username"])
+        self.assertEqual("secret", options["password"])
+        self.assertEqual("analytics", options["database"])
+        self.assertEqual("CUSTOM", options["auth"])
+
+    def test_hive_parse_dsn_rejects_unsupported_scheme(self) -> None:
+        with self.assertRaises(Exception):
+            HiveAdapter()._parse_dsn("mysql://alice:secret@localhost/default")
+
+    def test_hive_quotes_identifiers_with_backticks(self) -> None:
+        self.assertEqual(
+            "`default`.`orders``2026`",
+            HiveAdapter()._qualified_table("default", "orders`2026"),
+        )
 
     def test_mysql_explain_plan_is_parsed_to_structured_json(self) -> None:
         plan = MySQLAdapter().extract_plan(
