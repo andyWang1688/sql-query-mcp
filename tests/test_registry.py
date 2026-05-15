@@ -24,6 +24,26 @@ class _FakeAdapter:
 
 
 class RegistryRoutingTestCase(unittest.TestCase):
+    def test_default_registry_includes_hive_adapter(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_DSN",
+            enabled=True,
+            default_database="default",
+        )
+        registry = ConnectionRegistry(
+            AppConfig(settings=ServerSettings(), connections=[config])
+        )
+
+        adapter = registry.get_adapter(config)
+
+        self.assertEqual("hive", adapter.engine)
+
     def test_routes_only_by_configured_engine(self) -> None:
         postgres_config = ConnectionConfig(
             connection_id="tenant_mysql_hint_prod_ro",

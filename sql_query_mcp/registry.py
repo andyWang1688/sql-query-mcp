@@ -6,7 +6,7 @@ import os
 from contextlib import contextmanager
 from typing import Any, Iterator, Tuple
 
-from .adapters import MySQLAdapter, PostgresAdapter
+from .adapters import HiveAdapter, MySQLAdapter, PostgresAdapter
 from .config import AppConfig, ConnectionConfig
 from .errors import ConfigurationError, ConnectionNotFoundError
 
@@ -19,6 +19,7 @@ class ConnectionRegistry:
         self._adapters = {
             "postgres": PostgresAdapter(),
             "mysql": MySQLAdapter(),
+            "hive": HiveAdapter(),
         }
 
     def list_connections(self):
