@@ -84,6 +84,10 @@ class ValidatorTestCase(unittest.TestCase):
         with self.assertRaises(Exception):
             HiveAdapter()._parse_dsn("mysql://alice:secret@localhost/default")
 
+    def test_hive_parse_dsn_rejects_unsupported_query_keys(self) -> None:
+        with self.assertRaises(Exception):
+            HiveAdapter()._parse_dsn("hive://localhost/default?configuration=x")
+
     def test_hive_quotes_identifiers_with_backticks(self) -> None:
         self.assertEqual(
             "`default`.`orders``2026`",

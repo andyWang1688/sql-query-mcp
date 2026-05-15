@@ -39,7 +39,7 @@ class HiveAdapter:
         if parsed.scheme not in {"hive", "hive+pyhive"}:
             raise ConfigurationError(f"Hive DSN 必须使用 hive:// 或 hive+pyhive://，当前为 {parsed.scheme}")
 
-        supported_query_keys = {"auth", "kerberos_service_name", "configuration", "password"}
+        supported_query_keys = {"auth", "kerberos_service_name", "password"}
         query_params = {key: values[-1] for key, values in parse_qs(parsed.query).items()}
         unsupported = sorted(set(query_params) - supported_query_keys)
         if unsupported:
