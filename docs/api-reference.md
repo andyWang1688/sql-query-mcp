@@ -235,7 +235,7 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 ## `explain_query(connection_id, sql, analyze?)`
 
 这个工具对只读查询执行 `EXPLAIN`。你直接传原始 `SELECT` 即可，工具会在后
-台自动包装。
+台自动包装。Hive 使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
 
 **Parameters:**
 
@@ -248,7 +248,7 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 **Response:**
 
 - `200`: 返回 `plan`
-- Error: MySQL 和 Hive 当前版本不支持 `analyze=true`
+- Error: MySQL 当前版本不支持 `analyze=true`
 - Error: 直接传 `EXPLAIN ...` 会被拒绝
 
 **Example:**

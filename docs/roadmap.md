@@ -8,22 +8,25 @@ codebase and contribution process.
 
 ## Supported now
 
-This project currently supports PostgreSQL and MySQL only. That is a deliberate
-project limit. The current adapter modules, connection registry, metadata
-helpers, query executor, and tests are all written around those two engines.
+This project currently supports PostgreSQL, MySQL, and Hive. That is a
+deliberate project limit. The current adapter modules, connection registry,
+metadata helpers, query executor, and tests are all written around those three
+engines.
 
 - PostgreSQL is supported through `sql_query_mcp/adapters/postgres.py`.
 - MySQL is supported through `sql_query_mcp/adapters/mysql.py`.
+- Hive is supported through `sql_query_mcp/adapters/hive.py`.
 - Metadata tools preserve engine-specific namespace concepts: PostgreSQL uses
-  `schema`, and MySQL uses `database`.
+  `schema`, and MySQL and Hive use `database`.
 - Runtime support does not currently extend to any other engine.
 
 ## Candidate adapters
 
 The project is open to discussing additional adapters in the future, but no
-adapter beyond PostgreSQL and MySQL is supported yet. The items in this section
-are examples of future candidates only. They are not an implementation queue,
-not a published roadmap commitment, and not a promise that work has started.
+adapter beyond PostgreSQL, MySQL, and Hive is supported yet. The items in this
+section are examples of future candidates only. They are not an implementation
+queue, not a published roadmap commitment, and not a promise that work has
+started.
 
 - SQLite is one example of a future candidate for lightweight local and
   embedded workflows.

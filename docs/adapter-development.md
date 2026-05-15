@@ -96,8 +96,8 @@ and edge cases that the rest of the project already expects.
   MySQL metadata, how `build_explain_query()` rejects `analyze=True`, and how
   `extract_plan()` parses JSON text from MySQL's `EXPLAIN` output.
 - In `sql_query_mcp/adapters/hive.py`, study how `describe_table()` normalizes
-  Hive metadata, how `build_explain_query()` rejects `analyze=True`, and how
-  `extract_plan()` returns Hive's `EXPLAIN` output.
+  Hive metadata, how `build_explain_query()` uses `EXPLAIN` and
+  `EXPLAIN ANALYZE`, and how `extract_plan()` returns Hive's `EXPLAIN` output.
 - In `sql_query_mcp/registry.py`, study how adapter instances are created once
   and reused from the `_adapters` map.
 - In `sql_query_mcp/introspection.py`, study how missing table metadata is

@@ -30,8 +30,8 @@
 件导入入口。你可以用它帮助 AI 助手先理解结构，再生成 SQL 或把准备好的
 CSV/XLSX 文件导入到已有表。
 
-MySQL 和 Hive 在当前实现中支持 `explain_query`，但不支持
-`explain_query(..., analyze=True)`。
+MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_query`
+使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
 
 | 工具 | PostgreSQL | MySQL | Hive | 用途 |
 | --- | --- | --- | --- | --- |
@@ -66,7 +66,7 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`，但不支持
 - `import_table_file` 不接受原始 SQL，只插入表头能精确匹配目标表字段的文件
   列。
 
-对 MySQL 和 Hive 而言，`explain_query(..., analyze=True)` 在当前实现中不可用。
+对 Hive 而言，`explain_query` 使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
 
 ## 快速开始
 

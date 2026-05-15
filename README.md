@@ -34,8 +34,8 @@ and one narrow local file import path. You can use it to help an AI assistant
 understand structure before it generates SQL or imports a prepared CSV/XLSX file
 into an existing table.
 
-MySQL and Hive support `explain_query`, but not
-`explain_query(..., analyze=True)` in the current implementation.
+MySQL and Hive support `explain_query`. Hive uses `EXPLAIN` and
+`EXPLAIN ANALYZE` for `explain_query`.
 
 | Tool | PostgreSQL | MySQL | Hive | Purpose |
 | --- | --- | --- | --- | --- |
@@ -75,8 +75,7 @@ The service keeps those boundaries explicit in a few ways.
 - `import_table_file` doesn't accept raw SQL. It inserts only file columns whose
   headers exactly match existing table columns.
 
-For MySQL and Hive, `explain_query(..., analyze=True)` is not available in the
-current implementation.
+For Hive, `explain_query` uses `EXPLAIN` and `EXPLAIN ANALYZE`.
 
 ## Quick start
 
