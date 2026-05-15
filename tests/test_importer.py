@@ -124,6 +124,27 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual(2, records[0]["row_count"])
         self.assertEqual(".csv", records[0]["extra"]["file_extension"])
 
+    def test_hive_import_csv_uses_existing_import_tool_path(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(
+                Path(temp_dir) / "users.csv",
+                [["name", "status"], ["Alice", "active"]],
+            )
+            conn = _ConnectionStub()
+            importer = _build_hive_importer(Path(temp_dir) / "audit.jsonl", conn)
+
+            result = importer.import_table_file(
+                "warehouse_hive_prod_main_rw",
+                "users",
+                str(csv_path),
+            )
+
+        self.assertEqual("hive", result["engine"])
+        self.assertEqual("analytics", result["database"])
+        self.assertEqual(1, result["inserted_row_count"])
+        self.assertEqual(1, conn.begin_calls)
+        self.assertEqual(1, conn.commit_calls)
+
     def test_import_csv_strips_utf8_bom_from_first_header(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = _write_csv(
@@ -293,6 +314,25 @@ def _build_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
         dsn_env="MYSQL_CONN",
         enabled=True,
         default_database="crm",
+    )
+    return TableFileImporter(
+        registry=_RegistryStub(config, _AdapterStub(), conn),
+        settings=ServerSettings(audit_log_path=log_path),
+        audit_logger=AuditLogger(log_path),
+    )
+
+
+def _build_hive_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
+    config = ConnectionConfig(
+        connection_id="warehouse_hive_prod_main_rw",
+        engine="hive",
+        label="Warehouse Hive",
+        env="prod",
+        tenant="main",
+        role="rw",
+        dsn_env="HIVE_CONN",
+        enabled=True,
+        default_database="analytics",
     )
     return TableFileImporter(
         registry=_RegistryStub(config, _AdapterStub(), conn),
