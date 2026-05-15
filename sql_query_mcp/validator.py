@@ -48,7 +48,7 @@ MUTATING_EXPRESSION_TYPES = tuple(
     )
     if isinstance(expr_type, type)
 )
-DIALECT_BY_ENGINE = {"postgres": "postgres", "mysql": "mysql"}
+DIALECT_BY_ENGINE = {"postgres": "postgres", "mysql": "mysql", "hive": "hive"}
 
 
 def validate_select_sql(sql: str, engine: str) -> str:

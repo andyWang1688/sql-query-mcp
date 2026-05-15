@@ -34,6 +34,24 @@ class HiveAdapter:
     def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
         return None
 
+    def build_sample_query(self, database: str, table_name: str, sentinel_limit: int) -> str:
+        return f"SELECT * FROM {self._qualified_table(database, table_name)} LIMIT {int(sentinel_limit)}"
+
+    def build_insert_query(self, database: str, table_name: str, columns: List[str]) -> str:
+        quoted_columns = ", ".join(self._quote_identifier(column) for column in columns)
+        placeholders = ", ".join(["%s"] * len(columns))
+        return f"INSERT INTO {self._qualified_table(database, table_name)} ({quoted_columns}) VALUES ({placeholders})"
+
+    def build_explain_query(self, sql_text: str, analyze: bool = False) -> str:
+        prefix = "EXPLAIN ANALYZE" if analyze else "EXPLAIN"
+        return f"{prefix} {sql_text}"
+
+    def extract_plan(self, rows):
+        return [self._first_value(row) for row in rows]
+
+    def column_names(self, description) -> List[str]:
+        return [column[0] for column in (description or [])]
+
     def list_databases(self, conn: object) -> List[str]:
         with conn.cursor() as cur:
             cur.execute("SHOW DATABASES")

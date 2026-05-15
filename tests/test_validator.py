@@ -120,6 +120,29 @@ class ValidatorTestCase(unittest.TestCase):
             HiveAdapter()._qualified_table("default", "orders`2026"),
         )
 
+    def test_hive_validator_accepts_select(self) -> None:
+        self.assertEqual("SELECT * FROM orders", validate_select_sql("SELECT * FROM orders", "hive"))
+
+    def test_hive_build_sample_query_quotes_identifiers(self) -> None:
+        query = HiveAdapter().build_sample_query("analytics", "orders", 201)
+        self.assertEqual("SELECT * FROM `analytics`.`orders` LIMIT 201", query)
+
+    def test_hive_explain_uses_text_explain(self) -> None:
+        self.assertEqual("EXPLAIN SELECT 1", HiveAdapter().build_explain_query("SELECT 1"))
+
+    def test_hive_explain_analyze_uses_supported_explain_form(self) -> None:
+        self.assertEqual(
+            "EXPLAIN ANALYZE SELECT 1",
+            HiveAdapter().build_explain_query("SELECT 1", analyze=True),
+        )
+
+    def test_hive_extract_plan_returns_text_lines(self) -> None:
+        plan = HiveAdapter().extract_plan([("Plan line 1",), ("Plan line 2",)])
+        self.assertEqual(["Plan line 1", "Plan line 2"], plan)
+
+    def test_hive_column_names_read_dbapi_description(self) -> None:
+        self.assertEqual(["id", "name"], HiveAdapter().column_names([("id",), ("name",)]))
+
     def test_hive_list_databases_uses_show_databases(self) -> None:
         conn = _HiveConnectionStub([("default",), ("analytics",)])
 
