@@ -52,6 +52,14 @@ class _ConnectionStub:
         self.rollback_calls += 1
 
 
+class _HiveConnectionStub:
+    def __init__(self) -> None:
+        self.cursor_stub = _CursorStub()
+
+    def cursor(self) -> _CursorStub:
+        return self.cursor_stub
+
+
 class _AdapterStub:
     def __init__(self) -> None:
         self.set_statement_timeout_calls = []
@@ -130,7 +138,7 @@ class TableFileImporterTestCase(unittest.TestCase):
                 Path(temp_dir) / "users.csv",
                 [["name", "status"], ["Alice", "active"]],
             )
-            conn = _ConnectionStub()
+            conn = _HiveConnectionStub()
             importer = _build_hive_importer(Path(temp_dir) / "audit.jsonl", conn)
 
             result = importer.import_table_file(
@@ -142,8 +150,10 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual("hive", result["engine"])
         self.assertEqual("analytics", result["database"])
         self.assertEqual(1, result["inserted_row_count"])
-        self.assertEqual(1, conn.begin_calls)
-        self.assertEqual(1, conn.commit_calls)
+        self.assertEqual(
+            [("insert analytics.users (name,status)", [("Alice", "active")])],
+            conn.cursor_stub.executed_many,
+        )
 
     def test_import_csv_strips_utf8_bom_from_first_header(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -322,7 +332,7 @@ def _build_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
     )
 
 
-def _build_hive_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
+def _build_hive_importer(log_path: Path, conn: object) -> TableFileImporter:
     config = ConnectionConfig(
         connection_id="warehouse_hive_prod_main_rw",
         engine="hive",

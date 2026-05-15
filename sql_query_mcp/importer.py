@@ -185,6 +185,11 @@ def _execute_insert(conn: Any, engine: str, query: object, rows: List[Tuple[obje
                 cur.executemany(query, rows)
         return
 
+    if engine == "hive" and not hasattr(conn, "begin"):
+        with conn.cursor() as cur:
+            cur.executemany(query, rows)
+        return
+
     conn.begin()
     try:
         with conn.cursor() as cur:
