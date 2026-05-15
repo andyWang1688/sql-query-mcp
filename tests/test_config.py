@@ -210,6 +210,52 @@ class ConfigTestCase(unittest.TestCase):
             with self.assertRaises(ConfigurationError):
                 load_config(str(path))
 
+    def test_hive_config_accepts_default_database(self) -> None:
+        payload = {
+            "connections": [
+                {
+                    "connection_id": "warehouse_hive_prod_main_ro",
+                    "engine": "hive",
+                    "label": "Warehouse Hive",
+                    "env": "prod",
+                    "tenant": "main",
+                    "role": "ro",
+                    "dsn_env": "HIVE_CONN_WAREHOUSE_PROD_MAIN_RO",
+                    "default_database": "default",
+                    "enabled": True,
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            config = load_config(str(path))
+
+        self.assertEqual("hive", config.connections[0].engine)
+        self.assertEqual("default", config.connections[0].default_database)
+
+    def test_hive_cannot_define_default_schema(self) -> None:
+        payload = {
+            "connections": [
+                {
+                    "connection_id": "warehouse_hive_prod_main_ro",
+                    "engine": "hive",
+                    "label": "Warehouse Hive",
+                    "env": "prod",
+                    "tenant": "main",
+                    "role": "ro",
+                    "dsn_env": "HIVE_CONN_A",
+                    "default_schema": "public",
+                    "enabled": True,
+                }
+            ]
+        }
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "connections.json"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaises(ConfigurationError):
+                load_config(str(path))
+
     def test_duplicate_connection_ids_fail(self) -> None:
         payload = {
             "connections": [
