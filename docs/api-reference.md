@@ -5,7 +5,8 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 接入测试。
 
 这些 tools 面向 AI 的多数据库发现、结构理解、受控查询流程和受控文件导入，
-并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 相关的实际行为差异。
+并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 和 Hive 相关的实际行为
+差异。
 
 ## 响应约定
 
@@ -82,18 +83,18 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 
 ## `list_databases(connection_id)`
 
-这个工具只适用于 MySQL 连接，用来列出当前用户可见的 database。
+这个工具适用于 MySQL 和 Hive 连接，用来列出当前用户可见的 database。
 
 **Parameters:**
 
 | Name | Type | Required | Description |
 | --- | --- | --- | --- |
-| `connection_id` | string | Yes | MySQL 连接 ID |
+| `connection_id` | string | Yes | MySQL 或 Hive 连接 ID |
 
 **Response:**
 
 - `200`: 返回 `databases` 数组
-- Error: 如果连接不是 MySQL，会直接拒绝
+- Error: 如果连接不是 MySQL 或 Hive，会直接拒绝
 
 **Example:**
 
@@ -107,7 +108,9 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 
 ## `list_tables(connection_id, schema?, database?)`
 
-这个工具列出目标 schema 或 database 下的表和视图，并保留引擎原生命名。
+这个工具列出目标 schema 或 database 下的表和视图，并保留引擎原生命名。Hive
+连接需要传 `database`，或在配置中设置 `default_database`。Hive 不接受
+`schema`。
 
 **Parameters:**
 
@@ -115,13 +118,13 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 | --- | --- | --- | --- |
 | `connection_id` | string | Yes | 连接 ID |
 | `schema` | string | PostgreSQL conditional | PostgreSQL schema 名称 |
-| `database` | string | MySQL conditional | MySQL database 名称 |
+| `database` | string | MySQL/Hive conditional | MySQL 或 Hive database 名称 |
 
 **Response:**
 
 - `200`: 返回 `tables` 数组
 - Error: `schema` 和 `database` 不能同时传入
-- Error: PostgreSQL 不接受 `database`，MySQL 不接受 `schema`
+- Error: PostgreSQL 不接受 `database`，MySQL 和 Hive 不接受 `schema`
 
 **Example:**
 
@@ -144,6 +147,9 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 
 这个工具返回表字段和索引信息，适合让 AI 先理解结构再生成查询。
 
+Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hive 不接受
+`schema`。
+
 **Parameters:**
 
 | Name | Type | Required | Description |
@@ -151,7 +157,7 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 | `connection_id` | string | Yes | 连接 ID |
 | `table_name` | string | Yes | 表名 |
 | `schema` | string | PostgreSQL conditional | PostgreSQL schema 名称 |
-| `database` | string | MySQL conditional | MySQL database 名称 |
+| `database` | string | MySQL/Hive conditional | MySQL 或 Hive database 名称 |
 
 **Response:**
 
@@ -242,7 +248,7 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 **Response:**
 
 - `200`: 返回 `plan`
-- Error: MySQL 当前版本不支持 `analyze=true`
+- Error: MySQL 和 Hive 当前版本不支持 `analyze=true`
 - Error: 直接传 `EXPLAIN ...` 会被拒绝
 
 **Example:**
@@ -268,6 +274,9 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 
 这个工具按目标表抽样返回少量数据，适合在生成 SQL 前理解字段内容和典型值。
 
+Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hive 不接受
+`schema`。
+
 **Parameters:**
 
 | Name | Type | Required | Description |
@@ -275,7 +284,7 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 | `connection_id` | string | Yes | 连接 ID |
 | `table_name` | string | Yes | 表名 |
 | `schema` | string | PostgreSQL conditional | PostgreSQL schema 名称 |
-| `database` | string | MySQL conditional | MySQL database 名称 |
+| `database` | string | MySQL/Hive conditional | MySQL 或 Hive database 名称 |
 | `limit` | integer | No | 返回行数上限；最终不会超过 `max_limit` |
 
 **Response:**
@@ -309,7 +318,11 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 
 这个工具把 MCP server 本机路径上的 CSV 或 XLSX 文件导入到已有表。它是受控
 写入入口，不接受原始 SQL，也不做字段映射、清洗、upsert、merge 或多表导
-入。
+入。Hive 连接也暴露 `import_table_file`，并使用与 PostgreSQL 和 MySQL 相同
+的已有表导入路径和表头校验规则。
+
+Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hive 不接受
+`schema`。
 
 **Parameters:**
 
@@ -319,7 +332,7 @@ tool 的适用范围、参数、返回结果和使用示例，用它来编写客
 | `table_name` | string | Yes | 已存在的目标表名 |
 | `file_path` | string | Yes | MCP server 本机可访问的 CSV/XLSX 文件路径 |
 | `schema` | string | PostgreSQL conditional | PostgreSQL schema 名称 |
-| `database` | string | MySQL conditional | MySQL database 名称 |
+| `database` | string | MySQL/Hive conditional | MySQL 或 Hive database 名称 |
 | `sheet_name` | string | No | XLSX sheet 名称；不传时读取第一个 sheet |
 
 **Response:**

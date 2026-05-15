@@ -26,6 +26,17 @@
       "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_database": "crm"
+    },
+    {
+      "connection_id": "warehouse_hive_prod_main_ro",
+      "engine": "hive",
+      "label": "Warehouse Hive 生产库 / Main / 只读",
+      "env": "prod",
+      "tenant": "main",
+      "role": "ro",
+      "dsn_env": "HIVE_CONN_WAREHOUSE_PROD_MAIN_RO",
+      "enabled": true,
+      "default_database": "default"
     }
   ]
 }

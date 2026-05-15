@@ -13,6 +13,7 @@ clear boundaries.
 | --- | --- | --- |
 | PostgreSQL | Supported | Available today |
 | MySQL | Supported | Available today |
+| Hive | Supported | Available today |
 | SQLite | Candidate | Not supported yet |
 | SQL Server | Candidate | Not supported yet |
 | ClickHouse | Candidate | Not supported yet |
@@ -33,20 +34,20 @@ and one narrow local file import path. You can use it to help an AI assistant
 understand structure before it generates SQL or imports a prepared CSV/XLSX file
 into an existing table.
 
-MySQL supports `explain_query`, but not `explain_query(..., analyze=True)` in
-the current implementation.
+MySQL and Hive support `explain_query`, but not
+`explain_query(..., analyze=True)` in the current implementation.
 
-| Tool | PostgreSQL | MySQL | Purpose |
-| --- | --- | --- | --- |
-| `list_connections()` | Yes | Yes | List configured connections |
-| `list_schemas(connection_id)` | Yes | No | List visible PostgreSQL schemas |
-| `list_databases(connection_id)` | No | Yes | List visible MySQL databases |
-| `list_tables(connection_id, schema?, database?)` | Yes | Yes | List tables and views |
-| `describe_table(connection_id, table_name, schema?, database?)` | Yes | Yes | Inspect columns, keys, and indexes |
-| `run_select(connection_id, sql, limit?)` | Yes | Yes | Run read-only queries |
-| `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Inspect query plans |
-| `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Fetch small table samples |
-| `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | Yes | Yes | Import local CSV/XLSX files |
+| Tool | PostgreSQL | MySQL | Hive | Purpose |
+| --- | --- | --- | --- | --- |
+| `list_connections()` | Yes | Yes | Yes | List configured connections |
+| `list_schemas(connection_id)` | Yes | No | No | List visible PostgreSQL schemas |
+| `list_databases(connection_id)` | No | Yes | Yes | List visible MySQL or Hive databases |
+| `list_tables(connection_id, schema?, database?)` | Yes | Yes | Yes | List tables and views |
+| `describe_table(connection_id, table_name, schema?, database?)` | Yes | Yes | Yes | Inspect columns, keys, and indexes |
+| `run_select(connection_id, sql, limit?)` | Yes | Yes | Yes | Run read-only queries |
+| `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Yes | Inspect query plans |
+| `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Yes | Fetch small table samples |
+| `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | Yes | Yes | Yes | Import local CSV/XLSX files |
 
 These tools are useful for tasks such as listing namespaces, inspecting table
 definitions, reviewing indexes, sampling records, analyzing read-only queries
@@ -55,7 +56,7 @@ response details, see `docs/api-reference.md` (Chinese).
 
 ## How boundaries are constrained
 
-The product boundary is intentionally narrow today. Only PostgreSQL and MySQL
+The product boundary is intentionally narrow today. PostgreSQL, MySQL, and Hive
 are available today. Query tools remain read-only, and the only write path is a
 controlled local CSV/XLSX import into existing tables.
 
@@ -63,8 +64,8 @@ The service keeps those boundaries explicit in a few ways.
 
 - Connections declare `engine` explicitly, so the server never guesses from
   `connection_id`.
-- PostgreSQL uses `schema`, and MySQL uses `database`, without collapsing both
-  into one vague namespace field.
+- PostgreSQL uses `schema`, while MySQL and Hive use `database`, without
+  collapsing both into one vague namespace field.
 - Real DSNs stay in environment variables, while config files store only the
   environment variable names.
 - Query execution passes through `sqlglot` validation before reaching the
@@ -74,8 +75,8 @@ The service keeps those boundaries explicit in a few ways.
 - `import_table_file` doesn't accept raw SQL. It inserts only file columns whose
   headers exactly match existing table columns.
 
-For MySQL, `explain_query(..., analyze=True)` is not available in the current
-implementation.
+For MySQL and Hive, `explain_query(..., analyze=True)` is not available in the
+current implementation.
 
 ## Quick start
 
@@ -166,9 +167,26 @@ The example config looks like this.
       "dsn_env": "MYSQL_CONN_CRM_PROD_MAIN_RO",
       "enabled": true,
       "default_database": "crm"
+    },
+    {
+      "connection_id": "warehouse_hive_prod_main_ro",
+      "engine": "hive",
+      "label": "Warehouse Hive production / Main / read-only",
+      "env": "prod",
+      "tenant": "main",
+      "role": "ro",
+      "dsn_env": "HIVE_CONN_WAREHOUSE_PROD_MAIN_RO",
+      "enabled": true,
+      "default_database": "default"
     }
   ]
 }
+```
+
+Set DSNs in the MCP client environment. For Hive, use a Hive DSN such as:
+
+```bash
+export HIVE_CONN_WAREHOUSE_PROD_MAIN_RO='hive://user:password@hive.example.com:10000/default?auth=CUSTOM'
 ```
 
 ## Documentation
@@ -203,7 +221,7 @@ The main entry point is `sql_query_mcp/app.py`. Core modules include:
 - `sql_query_mcp/validator.py`: read-only SQL validation
 - `sql_query_mcp/introspection.py`: metadata inspection
 - `sql_query_mcp/executor.py`: query execution and limits
-- `sql_query_mcp/adapters/`: PostgreSQL and MySQL adapters
+- `sql_query_mcp/adapters/`: PostgreSQL, MySQL, and Hive adapters
 
 ## Contributing
 
