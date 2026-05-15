@@ -127,6 +127,14 @@ class ValidatorTestCase(unittest.TestCase):
         query = HiveAdapter().build_sample_query("analytics", "orders", 201)
         self.assertEqual("SELECT * FROM `analytics`.`orders` LIMIT 201", query)
 
+    def test_hive_build_insert_query_quotes_identifiers(self) -> None:
+        query = HiveAdapter().build_insert_query("analytics", "orders", ["order", "status"])
+
+        self.assertEqual(
+            "INSERT INTO `analytics`.`orders` (`order`, `status`) VALUES (%s, %s)",
+            query,
+        )
+
     def test_hive_explain_uses_text_explain(self) -> None:
         self.assertEqual("EXPLAIN SELECT 1", HiveAdapter().build_explain_query("SELECT 1"))
 
