@@ -101,7 +101,8 @@ flowchart LR
 
 ## 支持的能力
 
-当前版本聚焦在元数据查询、只读查询和执行计划，不包含写操作或迁移能力。
+当前版本聚焦在元数据查询、只读查询、执行计划，以及受控的已有表文件导入。
+服务不暴露任意写 SQL，也不包含迁移能力。
 
 - `list_connections`: 列出可用连接
 - `list_schemas`: 列出 PostgreSQL schema
@@ -111,6 +112,8 @@ flowchart LR
 - `run_select`: 执行受限只读查询
 - `explain_query`: 获取执行计划
 - `get_table_sample`: 抽样读取表数据
+- `import_table_file`: 将本地 CSV/XLSX 文件受控导入 PostgreSQL、MySQL 和
+  Hive 的已有表
 
 详细参数和返回结构见 `docs/api-reference.md`。
 
@@ -129,7 +132,7 @@ flowchart LR
 
 本文也明确列出当前版本刻意不做的事，避免误用。
 
-- 不提供写操作接口
+- 不暴露任意写 SQL；本地文件导入必须经过受限的已有表和表头校验
 - 不替代数据库自身权限管理
 - 不自动推断数据库引擎
 - 不把 `schema` 和 `database` 混成统一字段
