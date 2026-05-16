@@ -144,6 +144,9 @@ class AsyncQueryService:
             with self._lock:
                 job = self._get_job_locked(query_id)
                 result = self._format_job_locked(job, offset, limit)
+                sql_summary = job.sql_summary
+                engine = job.engine
+                status = job.status
             audit_connection_id = result.get("connection_id")
             self._audit.log(
                 tool="get_query",
@@ -152,8 +155,8 @@ class AsyncQueryService:
                 ),
                 success=True,
                 duration_ms=_elapsed_ms(started),
-                sql_summary=job.sql_summary,
-                extra={"engine": job.engine, "status": job.status},
+                sql_summary=sql_summary,
+                extra={"engine": engine, "status": status},
             )
             return result
         except Exception as exc:
@@ -180,6 +183,7 @@ class AsyncQueryService:
                     job.status = CANCELLED
                     job.updated_at = time.time()
                     cancel_callback = job.cancel_callback
+                    job.cancel_callback = None
                 result: Dict[str, object] = {
                     "query_id": job.query_id,
                     "connection_id": job.connection_id,

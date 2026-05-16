@@ -187,6 +187,19 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         time.sleep(0.05)
         self.assertEqual("cancelled", service.get_query(query_id)["status"])
 
+    def test_cancel_query_only_calls_driver_cancel_once(self) -> None:
+        service, self.temp_dir, cursor = _build_service(rows=[{"id": 1}], block=True)
+        query_id = cast(
+            str,
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
+        )
+        cursor.started.wait(1)
+
+        service.cancel_query(query_id)
+        service.cancel_query(query_id)
+
+        self.assertEqual(1, cursor.cancel_calls)
+
     def test_get_query_rejects_unknown_query_id(self) -> None:
         service, self.temp_dir, _ = _build_service(rows=[])
 
