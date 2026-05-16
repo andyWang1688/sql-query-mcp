@@ -4,9 +4,9 @@
 tool 的适用范围、参数、返回结果和使用示例，用它来编写客户端提示词或核对
 接入测试。
 
-这 12 个 tools 面向 AI 的多数据库发现、结构理解、受控查询流程和受控文件导入，
-并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 和 Hive 相关的实际行为
-差异。
+当前 API 一共暴露 12 个 tools，面向 AI 的多数据库发现、结构理解、受控查询
+流程和受控文件导入，并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 和
+Hive 相关的实际行为差异。
 
 ## 响应约定
 
@@ -248,6 +248,9 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 | `sql` | string | Yes | 只读 `SELECT` 或 `WITH ... SELECT` 查询 |
 | `limit` | integer | No | 查询总返回行数上限；最终不会超过 `max_limit` |
 
+后台执行时会额外读取 1 行用于判断 `truncated`，`applied_limit` 仍表示对外返
+回的行数上限。
+
 **Response:**
 
 - `200`: 返回 `query_id`、`connection_id`、`engine` 和 `status`
@@ -296,7 +299,8 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 - `row_count`: 当前任务缓存的总结果行数，最多为 `applied_limit`
 - `returned_row_count`: 本次响应实际返回的行数
 - `offset`: 本次响应的起始行偏移
-- `applied_limit`: 后台查询实际使用的总返回行数上限
+- `applied_limit`: 对外返回的总结果行数上限；后台执行会额外读取 1 行用于
+  判断 `truncated`
 - `truncated`: 数据库结果是否超过 `applied_limit` 并被截断
 
 **Example:**

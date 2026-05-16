@@ -78,8 +78,8 @@
 服务端逻辑可以分成四层，便于扩展和定位问题。
 
 1. `sql_query_mcp/app.py` 暴露 MCP tools。
-2. `sql_query_mcp/introspection.py` 和 `sql_query_mcp/executor.py` 实现工
-   具行为。
+2. `sql_query_mcp/introspection.py`、`sql_query_mcp/executor.py` 和
+   `sql_query_mcp/async_queries.py` 实现工具行为。
 3. `sql_query_mcp/registry.py` 管理连接配置、适配器和数据库连接。
 4. `sql_query_mcp/adapters/` 处理 PostgreSQL、MySQL 和 Hive 方言差异。
 
