@@ -6,8 +6,8 @@
 ## 项目定位
 
 `sql-query-mcp` 是一个面向 AI 数据库工作的通用 MCP 服务。它把数据库发现、
-受控查询和执行计划等能力封装成 MCP tools，让 AI 客户端可以在明确、可审
-计的边界内访问当前已接入的数据库。
+受控查询、异步只读查询和执行计划等能力封装成 MCP tools，让 AI 客户端可
+以在明确、可审计的边界内访问当前已接入的数据库。
 
 这个项目的重点不是做一个无限制的数据库代理，而是在服务端收拢连接处理、
 命名空间规则、SQL 校验和审计能力，为 AI 使用场景建立稳定、清晰的产品边
@@ -53,8 +53,8 @@
 
 ### 只读 SQL 校验
 
-`run_select` 和 `explain_query` 在执行前都会先经过只读 SQL 校验。这里使用
-`sqlglot` 做 AST 级校验，而不是只做关键字匹配。
+`run_select`、`start_query` 和 `explain_query` 在执行前都会先经过只读 SQL
+校验。这里使用 `sqlglot` 做 AST 级校验，而不是只做关键字匹配。
 
 这意味着：
 
@@ -101,15 +101,19 @@ flowchart LR
 
 ## 支持的能力
 
-当前版本聚焦在元数据查询、只读查询、执行计划，以及受控的已有表文件导入。
-服务不暴露任意写 SQL，也不包含迁移能力。
+当前版本聚焦在元数据查询、短时间有界只读查询、长时间异步只读查询、执行
+计划，以及受控的已有表文件导入。服务不暴露任意写 SQL，也不包含迁移能
+力。
 
 - `list_connections`: 列出可用连接
 - `list_schemas`: 列出 PostgreSQL schema
 - `list_databases`: 列出 MySQL 和 Hive database
 - `list_tables`: 列出表和视图
 - `describe_table`: 查看列和索引
-- `run_select`: 执行受限只读查询
+- `run_select`: 执行短时间、有明确上限的只读查询
+- `start_query`: 在 PostgreSQL、MySQL 和 Hive 上启动长时间运行的只读查询
+- `get_query`: 获取异步查询状态和分页结果
+- `cancel_query`: 取消运行中的异步查询
 - `explain_query`: 获取执行计划
 - `get_table_sample`: 抽样读取表数据
 - `import_table_file`: 将本地 CSV/XLSX 文件受控导入 PostgreSQL、MySQL 和

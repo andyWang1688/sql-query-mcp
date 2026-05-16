@@ -30,9 +30,10 @@ without exposing raw connection strings or flattening engine-specific concepts.
 ## What AI can do with it
 
 The current tool set focuses on database discovery, controlled query workflows,
-and one narrow local file import path. You can use it to help an AI assistant
-understand structure before it generates SQL or imports a prepared CSV/XLSX file
-into an existing table.
+asynchronous read-only queries, and one narrow local file import path. You can
+use it to help an AI assistant understand structure before it generates SQL,
+runs a bounded query, starts a long-running read-only query, or imports a
+prepared CSV/XLSX file into an existing table.
 
 MySQL and Hive support `explain_query`. Hive uses `EXPLAIN` and
 `EXPLAIN ANALYZE` for `explain_query`.
@@ -44,15 +45,20 @@ MySQL and Hive support `explain_query`. Hive uses `EXPLAIN` and
 | `list_databases(connection_id)` | No | Yes | Yes | List visible MySQL or Hive databases |
 | `list_tables(connection_id, schema?, database?)` | Yes | Yes | Yes | List tables and views |
 | `describe_table(connection_id, table_name, schema?, database?)` | Yes | Yes | Yes | Inspect columns, keys, and indexes |
-| `run_select(connection_id, sql, limit?)` | Yes | Yes | Yes | Run read-only queries |
+| `run_select(connection_id, sql, limit?)` | Yes | Yes | Yes | Run short bounded read-only queries |
+| `start_query(connection_id, sql, limit?)` | Yes | Yes | Yes | Start long-running read-only queries |
+| `get_query(query_id, offset?, limit?)` | Yes | Yes | Yes | Fetch async query status and paginated results |
+| `cancel_query(query_id)` | Yes | Yes | Yes | Cancel running async queries |
 | `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Yes | Inspect query plans |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Yes | Fetch small table samples |
 | `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | Yes | Yes | Yes | Import local CSV/XLSX files |
 
 These tools are useful for tasks such as listing namespaces, inspecting table
-definitions, reviewing indexes, sampling records, analyzing read-only queries
-with `EXPLAIN`, and importing prepared local files. For full request and
-response details, see `docs/api-reference.md` (Chinese).
+definitions, reviewing indexes, sampling records, running short read-only
+queries with `run_select`, running long read-only queries with `start_query`,
+`get_query`, and `cancel_query`, analyzing read-only queries with `EXPLAIN`, and
+importing prepared local files. For full request and response details, see
+`docs/api-reference.md` (Chinese).
 
 ## How boundaries are constrained
 
@@ -69,7 +75,9 @@ The service keeps those boundaries explicit in a few ways.
 - Real DSNs stay in environment variables, while config files store only the
   environment variable names.
 - Query execution passes through `sqlglot` validation before reaching the
-  database.
+  database. Use `run_select` for short bounded read-only queries, and use
+  `start_query`, `get_query`, and `cancel_query` for long-running read-only
+  queries.
 - The server accepts only `SELECT` and `WITH ... SELECT`, rejects comments and
   multi-statement input, and records audit logs for each call.
 - `import_table_file` doesn't accept raw SQL. It inserts only file columns whose

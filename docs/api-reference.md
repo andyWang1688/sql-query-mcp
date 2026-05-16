@@ -4,7 +4,7 @@
 tool 的适用范围、参数、返回结果和使用示例，用它来编写客户端提示词或核对
 接入测试。
 
-这些 tools 面向 AI 的多数据库发现、结构理解、受控查询流程和受控文件导入，
+这 12 个 tools 面向 AI 的多数据库发现、结构理解、受控查询流程和受控文件导入，
 并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 和 Hive 相关的实际行为
 差异。
 
@@ -197,7 +197,9 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 
 ## `run_select(connection_id, sql, limit?)`
 
-这个工具执行只读查询，并在服务端统一套上返回行数限制。
+这个工具执行短时间、有明确返回上限的只读查询，并在服务端统一套上返回行
+数限制。PostgreSQL、MySQL 和 Hive 都支持这个工具。长时间运行的只读查询
+应改用 `start_query()`、`get_query()` 和 `cancel_query()`。
 
 **Parameters:**
 
@@ -229,6 +231,121 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
   "truncated": false,
   "duration_ms": 17,
   "applied_limit": 200
+}
+```
+
+## `start_query(connection_id, sql, limit?)`
+
+这个工具启动一个后台只读查询，适合 PostgreSQL、MySQL 和 Hive 上耗时较长
+但仍然只读的 `SELECT` 或 `WITH ... SELECT` 查询。它只负责创建任务并立即返
+回 `query_id`，查询结果需要通过 `get_query()` 拉取。
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `connection_id` | string | Yes | 连接 ID |
+| `sql` | string | Yes | 只读 `SELECT` 或 `WITH ... SELECT` 查询 |
+| `limit` | integer | No | 查询总返回行数上限；最终不会超过 `max_limit` |
+
+**Response:**
+
+- `200`: 返回 `query_id`、`connection_id`、`engine` 和 `status`
+- `status`: 初始值为 `running`
+- Error: SQL 含注释、多语句、写操作或不合法语法时会被拒绝
+- Error: 连接不存在、连接被禁用或数据库连接失败时会返回脱敏错误
+
+**Example:**
+
+```json
+{
+  "query_id": "8f4d2d1e8d2c4e88b8a2e2f1d7d8a3c1",
+  "connection_id": "crm_prod_main_ro",
+  "engine": "postgres",
+  "status": "running"
+}
+```
+
+## `get_query(query_id, offset?, limit?)`
+
+这个工具查询后台任务状态，并在任务成功后分页返回结果。它适用于由
+`start_query()` 创建的 PostgreSQL、MySQL 和 Hive 异步查询。
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query_id` | string | Yes | `start_query()` 返回的任务 ID |
+| `offset` | integer | No | 从结果集第几行开始返回；默认 `0` |
+| `limit` | integer | No | 本次分页返回行数上限；不传时返回从 `offset` 开始的剩余结果 |
+
+**Response:**
+
+- `200`: 总是返回 `query_id`、`connection_id`、`engine` 和 `status`
+- `status`: 可能为 `running`、`succeeded`、`failed` 或 `cancelled`
+- `running`: 查询仍在执行，暂不返回 `rows`
+- `succeeded`: 返回 `columns`、`rows`、`row_count`、`returned_row_count`、
+  `offset`、`truncated`、`duration_ms` 和 `applied_limit`
+- `failed`: 返回 `error`
+- `cancelled`: 表示任务已取消，不返回 `rows`
+- Error: `query_id` 未知或已过期时会被拒绝
+- Error: `offset` 或 `limit` 小于 `0` 时会被拒绝
+
+分页字段含义如下。
+
+- `row_count`: 当前任务缓存的总结果行数，最多为 `applied_limit`
+- `returned_row_count`: 本次响应实际返回的行数
+- `offset`: 本次响应的起始行偏移
+- `applied_limit`: 后台查询实际使用的总返回行数上限
+- `truncated`: 数据库结果是否超过 `applied_limit` 并被截断
+
+**Example:**
+
+```json
+{
+  "query_id": "8f4d2d1e8d2c4e88b8a2e2f1d7d8a3c1",
+  "connection_id": "crm_prod_main_ro",
+  "engine": "postgres",
+  "status": "succeeded",
+  "columns": ["id", "status"],
+  "rows": [
+    {"id": 101, "status": "paid"}
+  ],
+  "row_count": 2,
+  "returned_row_count": 1,
+  "offset": 0,
+  "truncated": false,
+  "duration_ms": 923,
+  "applied_limit": 200
+}
+```
+
+## `cancel_query(query_id)`
+
+这个工具取消一个仍在运行的后台只读查询。它适用于由 `start_query()` 创建的
+PostgreSQL、MySQL 和 Hive 异步查询；如果任务已经结束，会返回当前最终状
+态。
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `query_id` | string | Yes | `start_query()` 返回的任务 ID |
+
+**Response:**
+
+- `200`: 返回 `query_id`、`connection_id`、`engine` 和 `status`
+- `status`: 可能为 `cancelled`、`succeeded`、`failed` 或 `running`
+- Error: `query_id` 未知或已过期时会被拒绝
+
+**Example:**
+
+```json
+{
+  "query_id": "8f4d2d1e8d2c4e88b8a2e2f1d7d8a3c1",
+  "connection_id": "crm_prod_main_ro",
+  "engine": "postgres",
+  "status": "cancelled"
 }
 ```
 
@@ -371,7 +488,10 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 1. 先调用 `list_connections()` 确认连接 ID。
 2. 再调用 `list_schemas()` 或 `list_databases()` 确认命名空间。
 3. 然后调用 `list_tables()` 和 `describe_table()` 理解结构。
-4. 最后再调用 `run_select()`、`explain_query()` 或 `import_table_file()`。
+4. 短查询调用 `run_select()`，长时间运行的只读查询调用 `start_query()`、
+   `get_query()` 和必要时的 `cancel_query()`。
+5. 需要执行计划时调用 `explain_query()`，需要导入文件时调用
+   `import_table_file()`。
 
 ## Next steps
 

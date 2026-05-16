@@ -26,9 +26,10 @@
 
 ## AI 能用它做什么
 
-当前这组工具主要面向数据库发现、受控查询流程，以及一个边界很窄的本地文
-件导入入口。你可以用它帮助 AI 助手先理解结构，再生成 SQL 或把准备好的
-CSV/XLSX 文件导入到已有表。
+当前这组工具主要面向数据库发现、受控查询流程、异步只读查询，以及一个边
+界很窄的本地文件导入入口。你可以用它帮助 AI 助手先理解结构，再生成 SQL、
+运行有明确上限的查询、启动长时间运行的只读查询，或把准备好的 CSV/XLSX
+文件导入到已有表。
 
 MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_query`
 使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
@@ -40,14 +41,18 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_quer
 | `list_databases(connection_id)` | 否 | 是 | 是 | 列出可见的 MySQL 或 Hive 数据库 |
 | `list_tables(connection_id, schema?, database?)` | 是 | 是 | 是 | 列出表和视图 |
 | `describe_table(connection_id, table_name, schema?, database?)` | 是 | 是 | 是 | 查看列、键和索引 |
-| `run_select(connection_id, sql, limit?)` | 是 | 是 | 是 | 运行只读查询 |
+| `run_select(connection_id, sql, limit?)` | 是 | 是 | 是 | 运行短时间、有明确上限的只读查询 |
+| `start_query(connection_id, sql, limit?)` | 是 | 是 | 是 | 启动长时间运行的只读查询 |
+| `get_query(query_id, offset?, limit?)` | 是 | 是 | 是 | 获取异步查询状态和分页结果 |
+| `cancel_query(query_id)` | 是 | 是 | 是 | 取消运行中的异步查询 |
 | `explain_query(connection_id, sql, analyze?)` | 是 | 是 | 是 | 查看查询计划 |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | 是 | 是 | 是 | 获取小规模表样本 |
 | `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | 是 | 是 | 是 | 导入本地 CSV/XLSX 文件 |
 
 这些工具适合用于列出命名空间、检查表定义、查看索引、采样记录、用
-`EXPLAIN` 分析只读查询，以及导入准备好的本地文件。完整的请求和响应细节
-见 `docs/api-reference.md`。
+`run_select` 运行短查询、用 `start_query`、`get_query` 和 `cancel_query`
+运行长时间只读查询、用 `EXPLAIN` 分析只读查询，以及导入准备好的本地文件。
+完整的请求和响应细节见 `docs/api-reference.md`。
 
 ## 边界如何被清晰限定
 
@@ -60,7 +65,9 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_quer
 - PostgreSQL 使用 `schema`，MySQL 和 Hive 使用 `database`，不会把两者强行合
   并成一个模糊的命名空间字段。
 - 真实 DSN 保存在环境变量里，而配置文件只存储环境变量名。
-- 查询执行在到达数据库之前会先经过 `sqlglot` 校验。
+- 查询执行在到达数据库之前会先经过 `sqlglot` 校验。短时间、有明确上限的
+  只读查询使用 `run_select`，长时间运行的只读查询使用 `start_query`、
+  `get_query` 和 `cancel_query`。
 - 服务只接受 `SELECT` 和 `WITH ... SELECT`，拒绝注释和多语句输入，并为每次
   调用记录审计日志。
 - `import_table_file` 不接受原始 SQL，只插入表头能精确匹配目标表字段的文件
