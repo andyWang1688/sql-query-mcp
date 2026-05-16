@@ -81,6 +81,17 @@ class ValidatorTestCase(unittest.TestCase):
         self.assertIn("SELECT * FROM (SELECT * FROM users)", query)
         self.assertEqual(201, sentinel_limit)
 
+    def test_build_limited_query_uses_hive_compatible_alias(self) -> None:
+        query, sentinel_limit = build_limited_query(
+            "SELECT * FROM default.students", 5, engine="hive"
+        )
+
+        self.assertEqual(
+            "SELECT * FROM (SELECT * FROM default.students) _pq_result LIMIT 6",
+            query,
+        )
+        self.assertEqual(6, sentinel_limit)
+
     def test_postgres_explain_uses_format_json(self) -> None:
         explain_sql = PostgresAdapter().build_explain_query("SELECT 1", analyze=False)
         self.assertIn("FORMAT JSON", explain_sql)

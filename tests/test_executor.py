@@ -155,6 +155,44 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
 
         self.assertEqual([2500], adapter.set_statement_timeout_calls)
 
+    def test_run_select_uses_hive_compatible_limit_wrapper(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="default",
+        )
+        cursor = _CursorStub(rows=[{"student_id": "s001"}, {"student_id": "s002"}])
+        adapter = _QueryAdapterStub()
+        registry = _RegistryStub(config, adapter, conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(
+                    default_limit=1,
+                    max_limit=10,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.run_select(
+                config.connection_id, "SELECT * FROM default.students"
+            )
+
+        self.assertEqual(
+            [
+                "SELECT * FROM (SELECT * FROM default.students) _pq_result LIMIT 2"
+            ],
+            cursor.executed,
+        )
+        self.assertTrue(result["truncated"])
+        self.assertEqual(1, result["row_count"])
+
     def test_mysql_explain_rejects_analyze_before_connecting(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_mysql_prod_main_ro",

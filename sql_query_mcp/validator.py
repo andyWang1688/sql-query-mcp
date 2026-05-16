@@ -72,9 +72,12 @@ def clamp_limit(limit: Optional[int], default_limit: int, max_limit: int) -> int
     return min(value, max_limit)
 
 
-def build_limited_query(sql: str, row_limit: int) -> Tuple[str, int]:
+def build_limited_query(
+    sql: str, row_limit: int, engine: Optional[str] = None
+) -> Tuple[str, int]:
     sentinel_limit = row_limit + 1
-    wrapped = f"SELECT * FROM ({sql}) AS _pq_result LIMIT {sentinel_limit}"
+    alias = "_pq_result" if engine == "hive" else "AS _pq_result"
+    wrapped = f"SELECT * FROM ({sql}) {alias} LIMIT {sentinel_limit}"
     return wrapped, sentinel_limit
 
 
