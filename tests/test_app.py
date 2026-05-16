@@ -14,6 +14,16 @@ class AppTestCase(unittest.TestCase):
 
         self.assertIn("import_table_file", {tool.name for tool in tools})
 
+    def test_create_app_registers_async_query_tools(self) -> None:
+        app = create_app()
+
+        tools = asyncio.run(app.list_tools())
+
+        tool_names = {tool.name for tool in tools}
+        self.assertIn("start_query", tool_names)
+        self.assertIn("get_query", tool_names)
+        self.assertIn("cancel_query", tool_names)
+
 
 if __name__ == "__main__":
     unittest.main()
