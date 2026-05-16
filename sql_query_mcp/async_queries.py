@@ -65,11 +65,13 @@ class AsyncQueryService:
         settings: ServerSettings,
         audit_logger: AuditLogger,
         retention_seconds: int = 3600,
+        max_running_queries: int = 4,
     ):
         self._registry = registry
         self._settings = settings
         self._audit = audit_logger
         self._retention_seconds = retention_seconds
+        self._max_running_queries = max_running_queries
         self._jobs: Dict[str, _AsyncQueryJob] = {}
         self._lock = threading.Lock()
 
@@ -114,6 +116,9 @@ class AsyncQueryService:
             applied_limit=row_limit,
         )
         with self._lock:
+            running_count = sum(1 for item in self._jobs.values() if item.status == RUNNING)
+            if running_count >= self._max_running_queries:
+                raise QueryExecutionError("异步查询运行数量已达到上限，请稍后再试。")
             self._jobs[query_id] = job
         self._audit.log(
             tool="start_query",

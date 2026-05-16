@@ -155,6 +155,19 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
 
         self.assertEqual(0, service.job_count())
 
+    def test_start_query_rejects_when_concurrency_limit_is_reached(self) -> None:
+        cursor = _CursorStub(rows=[{"id": 1}], block=True)
+        service, self.temp_dir, _ = _build_service(cursor=cursor)
+        service._max_running_queries = 1
+        first = service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")
+        cursor.started.wait(1)
+
+        with self.assertRaises(QueryExecutionError):
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 2")
+
+        cursor.release.set()
+        _wait_for_done(service, cast(str, first["query_id"]))
+
     def test_get_query_paginates_completed_results(self) -> None:
         service, self.temp_dir, _ = _build_service(
             rows=[{"id": 1}, {"id": 2}, {"id": 3}], description=["id"]
