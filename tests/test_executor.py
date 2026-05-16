@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sql_query_mcp.adapters.mysql import MySQLAdapter
+from sql_query_mcp.adapters.hive import HiveAdapter
 from sql_query_mcp.audit import AuditLogger
 from sql_query_mcp.config import ConnectionConfig, ServerSettings
 from sql_query_mcp.errors import QueryExecutionError
@@ -192,6 +193,33 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
         )
         self.assertTrue(result["truncated"])
         self.assertEqual(1, result["row_count"])
+
+    def test_run_select_normalizes_hive_tuple_rows(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="default",
+        )
+        cursor = _CursorStub(rows=[("s001", 95)], description=[("student_id",), ("score",)])
+        registry = _RegistryStub(config, HiveAdapter(), conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(audit_log_path=Path(temp_dir) / "audit.jsonl"),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.run_select(
+                config.connection_id, "SELECT student_id, score FROM default.students"
+            )
+
+        self.assertEqual(["student_id", "score"], result["columns"])
+        self.assertEqual([{"student_id": "s001", "score": 95}], result["rows"])
 
     def test_mysql_explain_rejects_analyze_before_connecting(self) -> None:
         config = ConnectionConfig(

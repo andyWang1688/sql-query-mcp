@@ -254,6 +254,8 @@ class AsyncQueryService:
                     cur.execute(limited_sql)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
+                    if hasattr(adapter, "normalize_rows"):
+                        rows = adapter.normalize_rows(rows, columns)
             truncated = len(rows) > applied_limit
             trimmed_rows = rows[:applied_limit]
             duration_ms = _elapsed_ms(started)
@@ -368,4 +370,6 @@ def _build_cancel_callback(adapter: Any, conn: Any, cursor: Any) -> Optional[Cal
         return cursor.cancel
     if hasattr(conn, "cancel"):
         return conn.cancel
+    if hasattr(conn, "close"):
+        return conn.close
     return None

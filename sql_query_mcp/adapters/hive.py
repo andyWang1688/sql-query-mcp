@@ -52,6 +52,9 @@ class HiveAdapter:
     def column_names(self, description) -> List[str]:
         return [column[0] for column in (description or [])]
 
+    def normalize_rows(self, rows, columns: List[str]) -> List[dict]:
+        return [dict(zip(columns, row)) for row in rows]
+
     def list_databases(self, conn: object) -> List[str]:
         with conn.cursor() as cur:
             cur.execute("SHOW DATABASES")

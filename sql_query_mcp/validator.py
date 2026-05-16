@@ -44,6 +44,7 @@ MUTATING_EXPRESSION_TYPES = tuple(
             "TruncateTable",
             "Vacuum",
             "Into",
+            "QueryTransform",
         )
     )
     if isinstance(expr_type, type)

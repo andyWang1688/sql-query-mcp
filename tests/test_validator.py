@@ -134,6 +134,11 @@ class ValidatorTestCase(unittest.TestCase):
     def test_hive_validator_accepts_select(self) -> None:
         self.assertEqual("SELECT * FROM orders", validate_select_sql("SELECT * FROM orders", "hive"))
 
+    def test_hive_validator_rejects_transform(self) -> None:
+        sql = "SELECT TRANSFORM(student_id) USING 'cat' AS student_id FROM students"
+        with self.assertRaises(SecurityError):
+            validate_select_sql(sql, "hive")
+
     def test_hive_build_sample_query_quotes_identifiers(self) -> None:
         query = HiveAdapter().build_sample_query("analytics", "orders", 201)
         self.assertEqual("SELECT * FROM `analytics`.`orders` LIMIT 201", query)
@@ -161,6 +166,19 @@ class ValidatorTestCase(unittest.TestCase):
 
     def test_hive_column_names_read_dbapi_description(self) -> None:
         self.assertEqual(["id", "name"], HiveAdapter().column_names([("id",), ("name",)]))
+
+    def test_hive_rows_are_normalized_to_dicts(self) -> None:
+        rows = HiveAdapter().normalize_rows(
+            [("s001", 95), ("s002", 82)], ["student_id", "score"]
+        )
+
+        self.assertEqual(
+            [
+                {"student_id": "s001", "score": 95},
+                {"student_id": "s002", "score": 82},
+            ],
+            rows,
+        )
 
     def test_hive_list_databases_uses_show_databases(self) -> None:
         conn = _HiveConnectionStub([("default",), ("analytics",)])

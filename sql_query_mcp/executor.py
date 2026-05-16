@@ -55,6 +55,8 @@ class QueryExecutor:
                     cur.execute(limited_sql)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
+                    if hasattr(adapter, "normalize_rows"):
+                        rows = adapter.normalize_rows(rows, columns)
 
                 truncated = len(rows) > row_limit
                 trimmed_rows = rows[:row_limit]
@@ -177,6 +179,8 @@ class QueryExecutor:
                     cur.execute(query)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
+                    if hasattr(adapter, "normalize_rows"):
+                        rows = adapter.normalize_rows(rows, columns)
 
                 truncated = len(rows) > row_limit
                 trimmed_rows = rows[:row_limit]
