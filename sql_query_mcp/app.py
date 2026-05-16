@@ -39,7 +39,7 @@ def create_app() -> FastMCP:
 
     @mcp.tool()
     def list_databases(connection_id: str) -> dict:
-        """List visible databases for a MySQL connection."""
+        """List visible databases for a MySQL or Hive connection."""
 
         return _run_tool(lambda: metadata.list_databases(connection_id))
 
@@ -49,7 +49,7 @@ def create_app() -> FastMCP:
         schema: Optional[str] = None,
         database: Optional[str] = None,
     ) -> dict:
-        """List tables and views for a resolved PostgreSQL schema or MySQL database."""
+        """List tables and views for a resolved schema or database."""
 
         return _run_tool(lambda: metadata.list_tables(connection_id, schema, database))
 
