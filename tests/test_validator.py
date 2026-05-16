@@ -87,7 +87,7 @@ class ValidatorTestCase(unittest.TestCase):
         )
 
         self.assertEqual(
-            "SELECT * FROM (SELECT * FROM default.students) AS `_pq_result` LIMIT 6",
+            "SELECT * FROM (SELECT * FROM default.students) AS pq_result LIMIT 6",
             query,
         )
         self.assertEqual(6, sentinel_limit)

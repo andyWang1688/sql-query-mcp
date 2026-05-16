@@ -76,8 +76,7 @@ def build_limited_query(
     sql: str, row_limit: int, engine: Optional[str] = None
 ) -> Tuple[str, int]:
     sentinel_limit = row_limit + 1
-    alias = "AS `_pq_result`" if engine == "hive" else "AS _pq_result"
-    wrapped = f"SELECT * FROM ({sql}) {alias} LIMIT {sentinel_limit}"
+    wrapped = f"SELECT * FROM ({sql}) AS pq_result LIMIT {sentinel_limit}"
     return wrapped, sentinel_limit
 
 
