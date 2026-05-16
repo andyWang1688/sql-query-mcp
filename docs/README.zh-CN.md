@@ -1,8 +1,8 @@
 # 中文入口
 
-`sql-query-mcp` 是一个面向 AI 助手的只读 SQL MCP 服务，当前为
-PostgreSQL、MySQL 和 Hive 提供受控的库表信息查看、样本读取、只读查询和执
-行计划查看能力。本页是中文读者的简短入口；主 `README.md` 现在以英文为
+`sql-query-mcp` 是一个面向 AI 助手的受控 SQL MCP 服务，当前为 PostgreSQL、
+MySQL 和 Hive 提供库表信息查看、样本读取、只读查询、执行计划查看，以及已
+有表文件导入能力。本页是中文读者的简短入口；主 `README.md` 现在以英文为
 主，这里只列最相关的文档。
 
 ## 从这里开始
