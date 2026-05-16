@@ -201,6 +201,18 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         with self.assertRaises(QueryExecutionError):
             service.get_query(query_id, limit=-1)
 
+    def test_get_query_rejects_negative_limit_for_running_query(self) -> None:
+        service, self.temp_dir, cursor = _build_service(rows=[{"id": 1}], block=True)
+        query_id = cast(
+            str,
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
+        )
+        cursor.started.wait(1)
+
+        with self.assertRaises(QueryExecutionError):
+            service.get_query(query_id, limit=-1)
+        cursor.release.set()
+
     def test_hive_async_query_uses_portable_wrapper(self) -> None:
         cursor = _CursorStub(rows=[{"id": 1}], description=["id"])
         service, self.temp_dir, _ = _build_service(cursor=cursor, engine="hive")

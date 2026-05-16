@@ -139,6 +139,8 @@ class AsyncQueryService:
         try:
             if offset < 0:
                 raise QueryExecutionError("offset 必须大于等于 0。")
+            if limit is not None and int(limit) < 0:
+                raise QueryExecutionError("limit 必须大于等于 0。")
             with self._lock:
                 job = self._get_job_locked(query_id)
                 result = self._format_job_locked(job, offset, limit)
@@ -171,19 +173,21 @@ class AsyncQueryService:
     def cancel_query(self, query_id: str) -> Dict[str, object]:
         started = time.perf_counter()
         try:
+            cancel_callback = None
             with self._lock:
                 job = self._get_job_locked(query_id)
                 if job.status == RUNNING:
                     job.status = CANCELLED
                     job.updated_at = time.time()
-                    if job.cancel_callback is not None:
-                        job.cancel_callback()
+                    cancel_callback = job.cancel_callback
                 result: Dict[str, object] = {
                     "query_id": job.query_id,
                     "connection_id": job.connection_id,
                     "engine": job.engine,
                     "status": job.status,
                 }
+            if cancel_callback is not None:
+                cancel_callback()
             self._audit.log(
                 tool="cancel_query",
                 connection_id=job.connection_id,
@@ -244,6 +248,7 @@ class AsyncQueryService:
             with self._lock:
                 job = self._get_job_locked(query_id)
                 if job.status == CANCELLED:
+                    job.cancel_callback = None
                     return
                 job.cancel_callback = None
                 job.status = SUCCEEDED
@@ -271,6 +276,7 @@ class AsyncQueryService:
                 except QueryExecutionError:
                     return
                 if job.status == CANCELLED:
+                    job.cancel_callback = None
                     return
                 job.cancel_callback = None
                 job.status = FAILED
@@ -319,8 +325,6 @@ class AsyncQueryService:
             return result
 
         page_limit = len(job.rows) if limit is None else int(limit)
-        if page_limit < 0:
-            raise QueryExecutionError("limit 必须大于等于 0。")
         rows = job.rows[offset : offset + page_limit]
         result.update(
             {
