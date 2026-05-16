@@ -186,7 +186,7 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
 
         self.assertEqual(
             [
-                "SELECT * FROM (SELECT * FROM default.students) _pq_result LIMIT 2"
+                "SELECT * FROM (SELECT * FROM default.students) AS `_pq_result` LIMIT 2"
             ],
             cursor.executed,
         )
