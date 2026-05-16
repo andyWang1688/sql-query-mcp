@@ -186,15 +186,23 @@ class AsyncQueryService:
                     "engine": job.engine,
                     "status": job.status,
                 }
+            cancel_error = None
             if cancel_callback is not None:
-                cancel_callback()
+                try:
+                    cancel_callback()
+                except Exception as exc:
+                    cancel_error = sanitize_error_message(str(exc))
             self._audit.log(
                 tool="cancel_query",
                 connection_id=job.connection_id,
                 success=True,
                 duration_ms=_elapsed_ms(started),
                 sql_summary=job.sql_summary,
-                extra={"engine": job.engine, "status": job.status},
+                extra={
+                    "engine": job.engine,
+                    "status": job.status,
+                    "cancel_error": cancel_error,
+                },
             )
             return result
         except Exception as exc:
@@ -249,6 +257,14 @@ class AsyncQueryService:
                 job = self._get_job_locked(query_id)
                 if job.status == CANCELLED:
                     job.cancel_callback = None
+                    self._audit.log(
+                        tool="async_query",
+                        connection_id=connection_id,
+                        success=True,
+                        duration_ms=_elapsed_ms(started),
+                        sql_summary=sql_summary,
+                        extra={"engine": engine, "status": CANCELLED},
+                    )
                     return
                 job.cancel_callback = None
                 job.status = SUCCEEDED

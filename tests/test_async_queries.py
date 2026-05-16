@@ -35,6 +35,7 @@ class _CursorStub:
         self.started = threading.Event()
         self.release = threading.Event()
         self.cancel_calls = 0
+        self.cancel_error: Exception | None = None
 
     def __enter__(self):
         return self
@@ -53,6 +54,8 @@ class _CursorStub:
 
     def cancel(self) -> None:
         self.cancel_calls += 1
+        if self.cancel_error is not None:
+            raise self.cancel_error
         self.release.set()
 
 
@@ -211,6 +214,22 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
 
         with self.assertRaises(QueryExecutionError):
             service.get_query(query_id, limit=-1)
+        cursor.release.set()
+
+    def test_cancel_query_keeps_cancelled_state_when_driver_cancel_fails(self) -> None:
+        cursor = _CursorStub(rows=[{"id": 1}], block=True)
+        cursor.cancel_error = RuntimeError("driver cancel failed")
+        service, self.temp_dir, _ = _build_service(cursor=cursor)
+        query_id = cast(
+            str,
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
+        )
+        cursor.started.wait(1)
+
+        cancelled = service.cancel_query(query_id)
+
+        self.assertEqual("cancelled", cancelled["status"])
+        self.assertEqual("cancelled", service.get_query(query_id)["status"])
         cursor.release.set()
 
     def test_hive_async_query_uses_portable_wrapper(self) -> None:
