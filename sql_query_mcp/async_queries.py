@@ -6,7 +6,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from .audit import AuditLogger
 from .config import ServerSettings
@@ -53,6 +53,7 @@ class _AsyncQueryJob:
     error: Optional[str] = None
     created_at: float = field(default_factory=time.time)
     updated_at: float = field(default_factory=time.time)
+    cancel_callback: Optional[Callable[[], None]] = None
 
 
 class AsyncQueryService:
@@ -175,6 +176,8 @@ class AsyncQueryService:
                 if job.status == RUNNING:
                     job.status = CANCELLED
                     job.updated_at = time.time()
+                    if job.cancel_callback is not None:
+                        job.cancel_callback()
                 result: Dict[str, object] = {
                     "query_id": job.query_id,
                     "connection_id": job.connection_id,
@@ -227,6 +230,11 @@ class AsyncQueryService:
             with self._registry.connection_from_config(config) as (conn, adapter):
                 _apply_statement_timeout(adapter, conn, self._settings.statement_timeout_ms)
                 with conn.cursor() as cur:
+                    with self._lock:
+                        job = self._get_job_locked(query_id)
+                        if job.status == CANCELLED:
+                            return
+                        job.cancel_callback = _build_cancel_callback(adapter, conn, cur)
                     cur.execute(limited_sql)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
@@ -237,6 +245,7 @@ class AsyncQueryService:
                 job = self._get_job_locked(query_id)
                 if job.status == CANCELLED:
                     return
+                job.cancel_callback = None
                 job.status = SUCCEEDED
                 job.columns = columns
                 job.rows = trimmed_rows
@@ -263,6 +272,7 @@ class AsyncQueryService:
                     return
                 if job.status == CANCELLED:
                     return
+                job.cancel_callback = None
                 job.status = FAILED
                 job.error = sanitized
                 job.duration_ms = duration_ms
@@ -308,7 +318,9 @@ class AsyncQueryService:
         if job.status != SUCCEEDED:
             return result
 
-        page_limit = len(job.rows) if limit is None else max(0, int(limit))
+        page_limit = len(job.rows) if limit is None else int(limit)
+        if page_limit < 0:
+            raise QueryExecutionError("limit 必须大于等于 0。")
         rows = job.rows[offset : offset + page_limit]
         result.update(
             {
@@ -323,3 +335,13 @@ class AsyncQueryService:
             }
         )
         return result
+
+
+def _build_cancel_callback(adapter: Any, conn: Any, cursor: Any) -> Optional[Callable[[], None]]:
+    if hasattr(adapter, "cancel_query"):
+        return lambda: adapter.cancel_query(conn, cursor)
+    if hasattr(cursor, "cancel"):
+        return cursor.cancel
+    if hasattr(conn, "cancel"):
+        return conn.cancel
+    return None

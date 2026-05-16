@@ -34,6 +34,7 @@ class _CursorStub:
         self.block = block
         self.started = threading.Event()
         self.release = threading.Event()
+        self.cancel_calls = 0
 
     def __enter__(self):
         return self
@@ -49,6 +50,10 @@ class _CursorStub:
 
     def fetchall(self):
         return self._rows
+
+    def cancel(self) -> None:
+        self.cancel_calls += 1
+        self.release.set()
 
 
 class _ConnectionStub:
@@ -173,10 +178,28 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         cancelled = service.cancel_query(query_id)
 
         self.assertEqual("cancelled", cancelled["status"])
+        self.assertEqual(1, cursor.cancel_calls)
         self.assertEqual("cancelled", service.get_query(query_id)["status"])
         cursor.release.set()
         time.sleep(0.05)
         self.assertEqual("cancelled", service.get_query(query_id)["status"])
+
+    def test_get_query_rejects_unknown_query_id(self) -> None:
+        service, self.temp_dir, _ = _build_service(rows=[])
+
+        with self.assertRaises(QueryExecutionError):
+            service.get_query("missing")
+
+    def test_get_query_rejects_negative_limit(self) -> None:
+        service, self.temp_dir, _ = _build_service(rows=[{"id": 1}], description=["id"])
+        query_id = cast(
+            str,
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
+        )
+        _wait_for_done(service, query_id)
+
+        with self.assertRaises(QueryExecutionError):
+            service.get_query(query_id, limit=-1)
 
     def test_hive_async_query_uses_portable_wrapper(self) -> None:
         cursor = _CursorStub(rows=[{"id": 1}], description=["id"])
