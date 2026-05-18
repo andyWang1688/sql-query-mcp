@@ -27,13 +27,20 @@ class _QueryAdapterStub:
 
 
 class _CursorStub:
-    def __init__(self, rows, description=None, block: bool = False) -> None:
+    def __init__(
+        self,
+        rows,
+        description=None,
+        block: bool = False,
+        release_on_cancel: bool = True,
+    ) -> None:
         self._rows = rows
         self.description = description or ["id"]
         self.executed = []
         self.block = block
         self.started = threading.Event()
         self.release = threading.Event()
+        self.release_on_cancel = release_on_cancel
         self.cancel_calls = 0
         self.cancel_error: Exception | None = None
 
@@ -56,7 +63,8 @@ class _CursorStub:
         self.cancel_calls += 1
         if self.cancel_error is not None:
             raise self.cancel_error
-        self.release.set()
+        if self.release_on_cancel:
+            self.release.set()
 
 
 class _ConnectionStub:
@@ -73,10 +81,24 @@ class _RegistryStub:
         self._adapter = adapter
         self._conn = conn
         self.connection_calls = 0
+        self.config_calls = 0
+        self.block_worker_config = False
+        self.worker_config_started = threading.Event()
+        self.release_worker_config = threading.Event()
+        self.worker_config_blocked = False
 
     def get_connection_config(self, connection_id: str) -> ConnectionConfig:
         if connection_id != self._config.connection_id:
             raise AssertionError(connection_id)
+        self.config_calls += 1
+        if (
+            self.block_worker_config
+            and self.config_calls > 1
+            and not self.worker_config_blocked
+        ):
+            self.worker_config_blocked = True
+            self.worker_config_started.set()
+            self.release_worker_config.wait(1)
         return self._config
 
     @contextmanager
@@ -87,7 +109,14 @@ class _RegistryStub:
         yield self._conn, self._adapter
 
 
-def _build_service(rows=None, description=None, cursor=None, engine="hive", block=False):
+def _build_service(
+    rows=None,
+    description=None,
+    cursor=None,
+    engine="hive",
+    block=False,
+    retention_seconds=3600,
+):
     config = ConnectionConfig(
         connection_id="warehouse_hive_prod_main_ro",
         engine=engine,
@@ -112,8 +141,9 @@ def _build_service(rows=None, description=None, cursor=None, engine="hive", bloc
             audit_log_path=Path(temp_dir.name) / "audit.jsonl",
         ),
         audit_logger=AuditLogger(Path(temp_dir.name) / "audit.jsonl"),
+        retention_seconds=retention_seconds,
     )
-    return service, temp_dir, cursor
+    return service, temp_dir, cursor, registry
 
 
 def _wait_for_done(service: AsyncQueryService, query_id: str):
@@ -126,6 +156,18 @@ def _wait_for_done(service: AsyncQueryService, query_id: str):
     raise AssertionError("query did not finish")
 
 
+def _wait_for_start(service: AsyncQueryService):
+    deadline = time.time() + 2
+    last_exc: QueryExecutionError | None = None
+    while time.time() < deadline:
+        try:
+            return service.start_query("warehouse_hive_prod_main_ro", "SELECT 2")
+        except QueryExecutionError as exc:
+            last_exc = exc
+            time.sleep(0.01)
+    raise AssertionError(f"query did not start: {last_exc}")
+
+
 class AsyncQueryServiceTestCase(unittest.TestCase):
     def tearDown(self) -> None:
         temp_dir = getattr(self, "temp_dir", None)
@@ -133,7 +175,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
             temp_dir.cleanup()
 
     def test_start_query_returns_running_and_get_query_returns_rows_after_completion(self) -> None:
-        service, self.temp_dir, _ = _build_service(
+        service, self.temp_dir, _, _ = _build_service(
             rows=[{"id": 1}, {"id": 2}], description=["id"]
         )
 
@@ -148,7 +190,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         self.assertEqual(1, result["returned_row_count"])
 
     def test_start_query_rejects_invalid_sql_before_creating_job(self) -> None:
-        service, self.temp_dir, _ = _build_service(rows=[])
+        service, self.temp_dir, _, _ = _build_service(rows=[])
 
         with self.assertRaises(QueryExecutionError):
             service.start_query("warehouse_hive_prod_main_ro", "DELETE FROM users")
@@ -157,7 +199,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
 
     def test_start_query_rejects_when_concurrency_limit_is_reached(self) -> None:
         cursor = _CursorStub(rows=[{"id": 1}], block=True)
-        service, self.temp_dir, _ = _build_service(cursor=cursor)
+        service, self.temp_dir, _, _ = _build_service(cursor=cursor)
         service._max_running_queries = 1
         first = service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")
         cursor.started.wait(1)
@@ -168,8 +210,56 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         cursor.release.set()
         _wait_for_done(service, cast(str, first["query_id"]))
 
+    def test_cancelled_query_counts_until_worker_exits(self) -> None:
+        cursor = _CursorStub(rows=[{"id": 1}], block=True, release_on_cancel=False)
+        service, self.temp_dir, _, _ = _build_service(cursor=cursor)
+        service._max_running_queries = 1
+        first = service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")
+        cursor.started.wait(1)
+        service.cancel_query(cast(str, first["query_id"]))
+
+        with self.assertRaises(QueryExecutionError):
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 2")
+
+        cursor.release.set()
+        second = _wait_for_start(service)
+        self.assertEqual("running", second["status"])
+
+    def test_cancelled_query_releases_capacity_when_worker_exits_before_execute(self) -> None:
+        service, self.temp_dir, _, registry = _build_service(rows=[])
+        registry.block_worker_config = True
+        service._max_running_queries = 1
+        first = service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")
+        registry.worker_config_started.wait(1)
+        service.cancel_query(cast(str, first["query_id"]))
+
+        with self.assertRaises(QueryExecutionError):
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 2")
+
+        registry.release_worker_config.set()
+        second = _wait_for_start(service)
+        self.assertEqual("running", second["status"])
+
+    def test_cleanup_keeps_active_cancelled_queries_counted(self) -> None:
+        cursor = _CursorStub(rows=[{"id": 1}], block=True, release_on_cancel=False)
+        service, self.temp_dir, _, _ = _build_service(
+            cursor=cursor,
+            retention_seconds=-1,
+        )
+        service._max_running_queries = 1
+        first = service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")
+        cursor.started.wait(1)
+        service.cancel_query(cast(str, first["query_id"]))
+
+        with self.assertRaises(QueryExecutionError):
+            service.start_query("warehouse_hive_prod_main_ro", "SELECT 2")
+
+        cursor.release.set()
+        second = _wait_for_start(service)
+        self.assertEqual("running", second["status"])
+
     def test_get_query_paginates_completed_results(self) -> None:
-        service, self.temp_dir, _ = _build_service(
+        service, self.temp_dir, _, _ = _build_service(
             rows=[{"id": 1}, {"id": 2}, {"id": 3}], description=["id"]
         )
         query_id = cast(str, service.start_query(
@@ -184,7 +274,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         self.assertEqual(1, page["returned_row_count"])
 
     def test_cancel_query_marks_running_job_cancelled(self) -> None:
-        service, self.temp_dir, cursor = _build_service(rows=[{"id": 1}], block=True)
+        service, self.temp_dir, cursor, _ = _build_service(rows=[{"id": 1}], block=True)
         query_id = cast(
             str,
             service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
@@ -201,7 +291,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         self.assertEqual("cancelled", service.get_query(query_id)["status"])
 
     def test_cancel_query_only_calls_driver_cancel_once(self) -> None:
-        service, self.temp_dir, cursor = _build_service(rows=[{"id": 1}], block=True)
+        service, self.temp_dir, cursor, _ = _build_service(rows=[{"id": 1}], block=True)
         query_id = cast(
             str,
             service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
@@ -214,13 +304,13 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
         self.assertEqual(1, cursor.cancel_calls)
 
     def test_get_query_rejects_unknown_query_id(self) -> None:
-        service, self.temp_dir, _ = _build_service(rows=[])
+        service, self.temp_dir, _, _ = _build_service(rows=[])
 
         with self.assertRaises(QueryExecutionError):
             service.get_query("missing")
 
     def test_get_query_rejects_negative_limit(self) -> None:
-        service, self.temp_dir, _ = _build_service(rows=[{"id": 1}], description=["id"])
+        service, self.temp_dir, _, _ = _build_service(rows=[{"id": 1}], description=["id"])
         query_id = cast(
             str,
             service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
@@ -231,7 +321,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
             service.get_query(query_id, limit=-1)
 
     def test_get_query_rejects_negative_limit_for_running_query(self) -> None:
-        service, self.temp_dir, cursor = _build_service(rows=[{"id": 1}], block=True)
+        service, self.temp_dir, cursor, _ = _build_service(rows=[{"id": 1}], block=True)
         query_id = cast(
             str,
             service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
@@ -245,7 +335,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
     def test_cancel_query_keeps_cancelled_state_when_driver_cancel_fails(self) -> None:
         cursor = _CursorStub(rows=[{"id": 1}], block=True)
         cursor.cancel_error = RuntimeError("driver cancel failed")
-        service, self.temp_dir, _ = _build_service(cursor=cursor)
+        service, self.temp_dir, _, _ = _build_service(cursor=cursor)
         query_id = cast(
             str,
             service.start_query("warehouse_hive_prod_main_ro", "SELECT 1")["query_id"],
@@ -260,7 +350,7 @@ class AsyncQueryServiceTestCase(unittest.TestCase):
 
     def test_hive_async_query_uses_portable_wrapper(self) -> None:
         cursor = _CursorStub(rows=[{"id": 1}], description=["id"])
-        service, self.temp_dir, _ = _build_service(cursor=cursor, engine="hive")
+        service, self.temp_dir, _, _ = _build_service(cursor=cursor, engine="hive")
 
         query_id = cast(
             str,

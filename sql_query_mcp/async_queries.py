@@ -45,6 +45,7 @@ class _AsyncQueryJob:
     sql_summary: str
     applied_limit: int
     status: str = RUNNING
+    active: bool = True
     columns: List[str] = field(default_factory=list)
     rows: List[object] = field(default_factory=list)
     row_count: int = 0
@@ -116,7 +117,7 @@ class AsyncQueryService:
             applied_limit=row_limit,
         )
         with self._lock:
-            running_count = sum(1 for item in self._jobs.values() if item.status == RUNNING)
+            running_count = sum(1 for item in self._jobs.values() if item.active)
             if running_count >= self._max_running_queries:
                 raise QueryExecutionError("异步查询运行数量已达到上限，请稍后再试。")
             self._jobs[query_id] = job
@@ -254,6 +255,9 @@ class AsyncQueryService:
                     with self._lock:
                         job = self._get_job_locked(query_id)
                         if job.status == CANCELLED:
+                            job.cancel_callback = None
+                            job.active = False
+                            job.updated_at = time.time()
                             return
                         job.cancel_callback = _build_cancel_callback(adapter, conn, cur)
                     cur.execute(limited_sql)
@@ -268,6 +272,7 @@ class AsyncQueryService:
                 job = self._get_job_locked(query_id)
                 if job.status == CANCELLED:
                     job.cancel_callback = None
+                    job.active = False
                     self._audit.log(
                         tool="async_query",
                         connection_id=connection_id,
@@ -278,6 +283,7 @@ class AsyncQueryService:
                     )
                     return
                 job.cancel_callback = None
+                job.active = False
                 job.status = SUCCEEDED
                 job.columns = columns
                 job.rows = trimmed_rows
@@ -304,8 +310,10 @@ class AsyncQueryService:
                     return
                 if job.status == CANCELLED:
                     job.cancel_callback = None
+                    job.active = False
                     return
                 job.cancel_callback = None
+                job.active = False
                 job.status = FAILED
                 job.error = sanitized
                 job.duration_ms = duration_ms
@@ -326,7 +334,7 @@ class AsyncQueryService:
             expired = [
                 query_id
                 for query_id, job in self._jobs.items()
-                if job.status != RUNNING and job.updated_at < cutoff
+                if not job.active and job.status != RUNNING and job.updated_at < cutoff
             ]
             for query_id in expired:
                 del self._jobs[query_id]
