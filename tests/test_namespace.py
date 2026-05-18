@@ -62,6 +62,45 @@ class NamespaceResolutionTestCase(unittest.TestCase):
         self.assertEqual("database", namespace.field_name)
         self.assertEqual("crm", namespace.value)
 
+    def test_hive_uses_database_argument(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            default_database="default",
+        )
+        namespace = resolve_namespace(config, database="analytics")
+        self.assertEqual("database", namespace.field_name)
+        self.assertEqual("analytics", namespace.value)
+
+    def test_hive_rejects_schema_argument(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            default_database="default",
+        )
+        with self.assertRaises(SecurityError):
+            resolve_namespace(config, schema="public")
+
+    def test_hive_requires_database_or_default_database(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+        )
+        with self.assertRaises(SecurityError):
+            resolve_namespace(config)
+
     def test_schema_and_database_cannot_both_be_set(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_prod_main_ro",

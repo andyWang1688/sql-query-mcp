@@ -17,6 +17,8 @@ from .config import ServerSettings
 from .errors import QueryExecutionError, sanitize_error_message
 from .namespace import NamespaceSelection, resolve_namespace
 
+HIVE_IMPORT_MAX_ROWS = 1000
+
 
 class TableFileImporter:
     """Import CSV and XLSX files through a constrained table-only path."""
@@ -53,6 +55,10 @@ class TableFileImporter:
             headers, rows, selected_sheet_name = _read_file(Path(file_path), sheet_name)
             if not rows:
                 raise QueryExecutionError("文件没有可导入的数据行。")
+            if config.engine == "hive" and len(rows) > HIVE_IMPORT_MAX_ROWS:
+                raise QueryExecutionError(
+                    f"Hive 导入最多支持 {HIVE_IMPORT_MAX_ROWS} 行；大文件请使用 Hive LOAD DATA、外部表或已有数据入湖链路。"
+                )
 
             with self._registry.connection_from_config(config) as (conn, adapter):
                 _apply_statement_timeout(adapter, conn, self._settings.statement_timeout_ms)
@@ -183,6 +189,12 @@ def _execute_insert(conn: Any, engine: str, query: object, rows: List[Tuple[obje
         with conn.transaction():
             with conn.cursor() as cur:
                 cur.executemany(query, rows)
+        return
+
+    if engine == "hive" and not hasattr(conn, "begin"):
+        with conn.cursor() as cur:
+            for row in rows:
+                cur.execute(query, row)
         return
 
     conn.begin()

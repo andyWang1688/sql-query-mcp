@@ -2,22 +2,23 @@
 
 This page explains how database adapters fit into `sql-query-mcp`, which
 methods the current code calls on an adapter, and what you need to implement if
-you want to propose a new one. Current runtime support remains PostgreSQL and
-MySQL only, so treat any work on other engines as a candidate contribution
-until the project accepts it.
+you want to propose a new one. Current runtime support includes PostgreSQL,
+MySQL, and Hive.
 
 ## Where adapters live
 
 Adapter implementations live in `sql_query_mcp/adapters/`. The current runtime
 adapters are `sql_query_mcp/adapters/postgres.py` and
-`sql_query_mcp/adapters/mysql.py`.
+`sql_query_mcp/adapters/mysql.py`, and `sql_query_mcp/adapters/hive.py`.
 
 - `sql_query_mcp/adapters/postgres.py` implements PostgreSQL-specific metadata,
   sampling, explain formatting, connection pooling, and result handling.
 - `sql_query_mcp/adapters/mysql.py` implements MySQL-specific metadata,
   sampling, explain formatting, DSN parsing, and result handling.
+- `sql_query_mcp/adapters/hive.py` implements Hive-specific metadata,
+  sampling, explain formatting, DSN parsing, and result handling.
 - `sql_query_mcp/adapters/__init__.py` exposes `PostgresAdapter` and
-  `MySQLAdapter` through package-level imports.
+  `MySQLAdapter` and `HiveAdapter` through package-level imports.
 - `sql_query_mcp/registry.py` instantiates adapters and routes each configured
   connection to the correct engine implementation.
 
@@ -51,7 +52,7 @@ The current adapter API includes the following members.
 | `close()` | `sql_query_mcp/registry.py` | Clean up pooled or cached resources when the registry shuts down. |
 | `set_statement_timeout(conn, timeout_ms)` | `sql_query_mcp/introspection.py`, `sql_query_mcp/executor.py` | Apply the per-request statement timeout if one is configured. |
 | `list_schemas(conn)` | `sql_query_mcp/introspection.py` for PostgreSQL | Return visible PostgreSQL schemas. This is engine-specific. |
-| `list_databases(conn)` | `sql_query_mcp/introspection.py` for MySQL | Return visible MySQL databases. This is engine-specific. |
+| `list_databases(conn)` | `sql_query_mcp/introspection.py` for MySQL and Hive | Return visible MySQL or Hive databases. This is engine-specific. |
 | `list_tables(conn, namespace)` | `sql_query_mcp/introspection.py` | Return tables and views for the resolved schema or database. |
 | `describe_table(conn, namespace, table_name)` | `sql_query_mcp/introspection.py` | Return normalized column and index metadata, or `None` when the table is not found. |
 | `build_sample_query(namespace, table_name, sentinel_limit)` | `sql_query_mcp/executor.py` | Build a safe sample query that fetches one extra row so truncation can be detected. |
@@ -62,7 +63,7 @@ The current adapter API includes the following members.
 ## What contributors need to implement
 
 If you propose a candidate adapter, implement the same integration points that
-the PostgreSQL and MySQL adapters already satisfy. Keep behavior read-only, and
+the PostgreSQL, MySQL, and Hive adapters already satisfy. Keep behavior read-only, and
 avoid broadening runtime support claims until the project has accepted the new
 engine.
 
@@ -77,8 +78,8 @@ engine.
    sample query generation, explain query generation, plan extraction, and
    column name normalization.
 5. Preserve engine-native namespace semantics. For example, PostgreSQL uses
-   `schema`, and MySQL uses `database`; a future candidate adapter must define
-   its own compatible namespace behavior clearly.
+   `schema`, and MySQL and Hive use `database`; a future candidate adapter must
+   define its own compatible namespace behavior clearly.
 6. Keep the adapter compatible with `sql_query_mcp/introspection.py` and
    `sql_query_mcp/executor.py` without weakening read-only validation or the
    audit log fields those services already write.
@@ -94,6 +95,9 @@ and edge cases that the rest of the project already expects.
 - In `sql_query_mcp/adapters/mysql.py`, study how `describe_table()` normalizes
   MySQL metadata, how `build_explain_query()` rejects `analyze=True`, and how
   `extract_plan()` parses JSON text from MySQL's `EXPLAIN` output.
+- In `sql_query_mcp/adapters/hive.py`, study how `describe_table()` normalizes
+  Hive metadata, how `build_explain_query()` uses `EXPLAIN` and
+  `EXPLAIN ANALYZE`, and how `extract_plan()` returns Hive's `EXPLAIN` output.
 - In `sql_query_mcp/registry.py`, study how adapter instances are created once
   and reused from the `_adapters` map.
 - In `sql_query_mcp/introspection.py`, study how missing table metadata is

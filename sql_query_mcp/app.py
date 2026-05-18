@@ -6,6 +6,7 @@ from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
 
+from .async_queries import AsyncQueryService
 from .audit import AuditLogger
 from .config import load_config
 from .errors import SqlQueryMCPError
@@ -22,6 +23,7 @@ def create_app() -> FastMCP:
     metadata = MetadataService(registry, app_config.settings, audit_logger)
     executor = QueryExecutor(registry, app_config.settings, audit_logger)
     importer = TableFileImporter(registry, app_config.settings, audit_logger)
+    async_queries = AsyncQueryService(registry, app_config.settings, audit_logger)
 
     mcp = FastMCP("sql-query-mcp", json_response=True)
 
@@ -39,7 +41,7 @@ def create_app() -> FastMCP:
 
     @mcp.tool()
     def list_databases(connection_id: str) -> dict:
-        """List visible databases for a MySQL connection."""
+        """List visible databases for a MySQL or Hive connection."""
 
         return _run_tool(lambda: metadata.list_databases(connection_id))
 
@@ -49,7 +51,7 @@ def create_app() -> FastMCP:
         schema: Optional[str] = None,
         database: Optional[str] = None,
     ) -> dict:
-        """List tables and views for a resolved PostgreSQL schema or MySQL database."""
+        """List tables and views for a resolved schema or database."""
 
         return _run_tool(lambda: metadata.list_tables(connection_id, schema, database))
 
@@ -87,6 +89,24 @@ def create_app() -> FastMCP:
         """Fetch a small sample from a table for schema discovery."""
 
         return _run_tool(lambda: executor.get_table_sample(connection_id, table_name, schema, database, limit))
+
+    @mcp.tool()
+    def start_query(connection_id: str, sql: str, limit: Optional[int] = None) -> dict:
+        """Start an asynchronous read-only SELECT or CTE query."""
+
+        return _run_tool(lambda: async_queries.start_query(connection_id, sql, limit))
+
+    @mcp.tool()
+    def get_query(query_id: str, offset: int = 0, limit: Optional[int] = None) -> dict:
+        """Get asynchronous query status and paginated results when complete."""
+
+        return _run_tool(lambda: async_queries.get_query(query_id, offset, limit))
+
+    @mcp.tool()
+    def cancel_query(query_id: str) -> dict:
+        """Cancel a running asynchronous query."""
+
+        return _run_tool(lambda: async_queries.cancel_query(query_id))
 
     @mcp.tool()
     def import_table_file(

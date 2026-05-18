@@ -44,11 +44,12 @@ MUTATING_EXPRESSION_TYPES = tuple(
             "TruncateTable",
             "Vacuum",
             "Into",
+            "QueryTransform",
         )
     )
     if isinstance(expr_type, type)
 )
-DIALECT_BY_ENGINE = {"postgres": "postgres", "mysql": "mysql"}
+DIALECT_BY_ENGINE = {"postgres": "postgres", "mysql": "mysql", "hive": "hive"}
 
 
 def validate_select_sql(sql: str, engine: str) -> str:
@@ -72,9 +73,11 @@ def clamp_limit(limit: Optional[int], default_limit: int, max_limit: int) -> int
     return min(value, max_limit)
 
 
-def build_limited_query(sql: str, row_limit: int) -> Tuple[str, int]:
+def build_limited_query(
+    sql: str, row_limit: int, engine: Optional[str] = None
+) -> Tuple[str, int]:
     sentinel_limit = row_limit + 1
-    wrapped = f"SELECT * FROM ({sql}) AS _pq_result LIMIT {sentinel_limit}"
+    wrapped = f"SELECT * FROM ({sql}) AS pq_result LIMIT {sentinel_limit}"
     return wrapped, sentinel_limit
 
 

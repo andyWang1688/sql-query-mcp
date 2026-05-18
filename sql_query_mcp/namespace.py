@@ -40,6 +40,14 @@ def resolve_namespace(
             raise SecurityError("MySQL 连接必须显式传 database，或在配置中设置 default_database。")
         return NamespaceSelection(field_name="database", value=resolved)
 
+    if config.engine == "hive":
+        if schema:
+            raise SecurityError("Hive 连接不接受 schema 参数。")
+        resolved = database or config.default_database
+        if not resolved:
+            raise SecurityError("Hive 连接必须显式传 database，或在配置中设置 default_database。")
+        return NamespaceSelection(field_name="database", value=resolved)
+
     raise SecurityError(f"未知 engine: {config.engine}")
 
 

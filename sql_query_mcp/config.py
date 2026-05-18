@@ -16,7 +16,7 @@ DEFAULT_CONFIG_ENV = "SQL_QUERY_MCP_CONFIG"
 DEFAULT_CONFIG_PATH = PACKAGE_ROOT / "config" / "connections.json"
 DEFAULT_AUDIT_LOG_PATH = PACKAGE_ROOT / "logs" / "audit.jsonl"
 CONNECTION_ID_RE = re.compile(r"^[a-z0-9]+(?:_[a-z0-9]+){3,}$")
-SUPPORTED_ENGINES = {"postgres", "mysql"}
+SUPPORTED_ENGINES = {"postgres", "mysql", "hive"}
 
 
 @dataclass(frozen=True)
@@ -135,7 +135,7 @@ def _parse_connections(items: object) -> List[ConnectionConfig]:
             )
         if engine not in SUPPORTED_ENGINES:
             raise ConfigurationError(
-                f"{connection_id} 缺少合法 engine，必须是 postgres 或 mysql"
+                f"{connection_id} 缺少合法 engine，必须是 postgres、mysql 或 hive"
             )
         if connection_id in seen:
             raise ConfigurationError(f"重复的 connection_id: {connection_id}")
@@ -158,9 +158,9 @@ def _parse_connections(items: object) -> List[ConnectionConfig]:
             raise ConfigurationError(
                 f"{connection_id} 是 PostgreSQL 连接，不能配置 default_database"
             )
-        if engine == "mysql" and "default_schema" in item:
+        if engine in {"mysql", "hive"} and "default_schema" in item:
             raise ConfigurationError(
-                f"{connection_id} 是 MySQL 连接，不能配置 default_schema"
+                f"{connection_id} 是 {engine} 连接，不能配置 default_schema"
             )
 
         result.append(

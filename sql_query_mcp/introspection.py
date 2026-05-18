@@ -68,7 +68,8 @@ class MetadataService:
         config = None
         try:
             config = self._registry.get_connection_config(connection_id)
-            require_engine(config, "mysql", "list_databases")
+            if config.engine not in {"mysql", "hive"}:
+                require_engine(config, "mysql", "list_databases")
             with self._registry.connection_from_config(config) as (conn, adapter):
                 _apply_statement_timeout(
                     adapter, conn, self._settings.statement_timeout_ms
@@ -85,7 +86,7 @@ class MetadataService:
             )
             return {
                 "connection_id": connection_id,
-                "engine": "mysql",
+                "engine": config.engine,
                 "databases": databases,
             }
         except Exception as exc:

@@ -6,6 +6,7 @@ from contextlib import contextmanager
 from pathlib import Path
 
 from sql_query_mcp.adapters.mysql import MySQLAdapter
+from sql_query_mcp.adapters.hive import HiveAdapter
 from sql_query_mcp.audit import AuditLogger
 from sql_query_mcp.config import ConnectionConfig, ServerSettings
 from sql_query_mcp.errors import QueryExecutionError
@@ -20,6 +21,9 @@ class _SampleAdapter:
         self, namespace: str, table_name: str, sentinel_limit: int
     ) -> str:
         return f"SELECT * FROM {namespace}.{table_name} LIMIT {sentinel_limit}"
+
+    def column_names(self, description):
+        return list(description)
 
 
 class _CursorStub:
@@ -152,6 +156,71 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
 
         self.assertEqual([2500], adapter.set_statement_timeout_calls)
 
+    def test_run_select_uses_hive_compatible_limit_wrapper(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="default",
+        )
+        cursor = _CursorStub(rows=[{"student_id": "s001"}, {"student_id": "s002"}])
+        adapter = _QueryAdapterStub()
+        registry = _RegistryStub(config, adapter, conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(
+                    default_limit=1,
+                    max_limit=10,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.run_select(
+                config.connection_id, "SELECT * FROM default.students"
+            )
+
+        self.assertEqual(
+            [
+                "SELECT * FROM (SELECT * FROM default.students) AS pq_result LIMIT 2"
+            ],
+            cursor.executed,
+        )
+        self.assertTrue(result["truncated"])
+        self.assertEqual(1, result["row_count"])
+
+    def test_run_select_normalizes_hive_tuple_rows(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="default",
+        )
+        cursor = _CursorStub(rows=[("s001", 95)], description=[("student_id",), ("score",)])
+        registry = _RegistryStub(config, HiveAdapter(), conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(audit_log_path=Path(temp_dir) / "audit.jsonl"),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.run_select(
+                config.connection_id, "SELECT student_id, score FROM default.students"
+            )
+
+        self.assertEqual(["student_id", "score"], result["columns"])
+        self.assertEqual([{"student_id": "s001", "score": 95}], result["rows"])
+
     def test_mysql_explain_rejects_analyze_before_connecting(self) -> None:
         config = ConnectionConfig(
             connection_id="crm_mysql_prod_main_ro",
@@ -199,6 +268,37 @@ class QueryExecutorValidationTestCase(unittest.TestCase):
                     config.connection_id, "orders", database="crm"
                 )
         self.assertEqual(0, registry.connection_calls)
+
+    def test_get_table_sample_uses_database_for_hive(self) -> None:
+        config = ConnectionConfig(
+            connection_id="warehouse_hive_prod_main_ro",
+            engine="hive",
+            label="Warehouse Hive",
+            env="prod",
+            tenant="main",
+            role="ro",
+            dsn_env="HIVE_CONN",
+            enabled=True,
+            default_database="analytics",
+        )
+        cursor = _CursorStub(rows=[{"id": 1}, {"id": 2}], description=["id"])
+        adapter = _SampleAdapter()
+        registry = _RegistryStub(config, adapter, conn=_ConnectionStub(cursor))
+        with tempfile.TemporaryDirectory() as temp_dir:
+            executor = QueryExecutor(
+                registry=registry,
+                settings=ServerSettings(
+                    default_limit=1,
+                    max_limit=10,
+                    audit_log_path=Path(temp_dir) / "audit.jsonl",
+                ),
+                audit_logger=AuditLogger(Path(temp_dir) / "audit.jsonl"),
+            )
+            result = executor.get_table_sample(config.connection_id, "orders")
+
+        self.assertEqual("analytics", result["database"])
+        self.assertTrue(result["truncated"])
+        self.assertEqual(["SELECT * FROM analytics.orders LIMIT 2"], cursor.executed)
 
 
 if __name__ == "__main__":

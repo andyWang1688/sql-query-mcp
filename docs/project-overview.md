@@ -6,8 +6,8 @@
 ## 项目定位
 
 `sql-query-mcp` 是一个面向 AI 数据库工作的通用 MCP 服务。它把数据库发现、
-受控查询和执行计划等能力封装成 MCP tools，让 AI 客户端可以在明确、可审
-计的边界内访问当前已接入的数据库。
+受控查询、异步只读查询和执行计划等能力封装成 MCP tools，让 AI 客户端可
+以在明确、可审计的边界内访问当前已接入的数据库。
 
 这个项目的重点不是做一个无限制的数据库代理，而是在服务端收拢连接处理、
 命名空间规则、SQL 校验和审计能力，为 AI 使用场景建立稳定、清晰的产品边
@@ -20,7 +20,7 @@
 
 - 连接配置和真实 DSN 分离，DSN 只通过环境变量注入
 - `engine` 必须显式声明，不从 `connection_id` 推断
-- PostgreSQL 和 MySQL 保留各自原生的命名空间概念与默认值字段
+- PostgreSQL、MySQL 和 Hive 保留各自原生的命名空间概念与默认值字段
 - 工具执行前先过只读 SQL 校验
 - 每次调用都记录审计日志
 
@@ -40,11 +40,12 @@
 
 ### 命名空间解析
 
-项目不会把 PostgreSQL 和 MySQL 粗暴映射成同一个抽象命名空间，而是保留
-各自的原生概念。
+项目不会把 PostgreSQL、MySQL 和 Hive 粗暴映射成同一个抽象命名空间，而是
+保留各自的原生概念。
 
 - PostgreSQL: 使用 `schema`，默认值字段为 `default_schema`
 - MySQL: 使用 `database`，默认值字段为 `default_database`
+- Hive: 使用 `database`，默认值字段为 `default_database`
 
 服务会在进入数据库前完成参数合法性校验和默认值回退。
 
@@ -52,8 +53,8 @@
 
 ### 只读 SQL 校验
 
-`run_select` 和 `explain_query` 在执行前都会先经过只读 SQL 校验。这里使用
-`sqlglot` 做 AST 级校验，而不是只做关键字匹配。
+`run_select`、`start_query` 和 `explain_query` 在执行前都会先经过只读 SQL
+校验。这里使用 `sqlglot` 做 AST 级校验，而不是只做关键字匹配。
 
 这意味着：
 
@@ -77,10 +78,10 @@
 服务端逻辑可以分成四层，便于扩展和定位问题。
 
 1. `sql_query_mcp/app.py` 暴露 MCP tools。
-2. `sql_query_mcp/introspection.py` 和 `sql_query_mcp/executor.py` 实现工
-   具行为。
+2. `sql_query_mcp/introspection.py`、`sql_query_mcp/executor.py` 和
+   `sql_query_mcp/async_queries.py` 实现工具行为。
 3. `sql_query_mcp/registry.py` 管理连接配置、适配器和数据库连接。
-4. `sql_query_mcp/adapters/` 处理 PostgreSQL / MySQL 方言差异。
+4. `sql_query_mcp/adapters/` 处理 PostgreSQL、MySQL 和 Hive 方言差异。
 
 ## 请求流转
 
@@ -94,22 +95,29 @@ flowchart LR
   C --> D[namespace validation]
   D --> E[SQL validation or metadata routing]
   E --> F[adapter]
-  F --> G[(PostgreSQL / MySQL)]
+  F --> G[(PostgreSQL, MySQL, Hive)]
   G --> H[audit log + JSON response]
 ```
 
 ## 支持的能力
 
-当前版本聚焦在元数据查询、只读查询和执行计划，不包含写操作或迁移能力。
+当前版本聚焦在元数据查询、短时间有界只读查询、长时间异步只读查询、执行
+计划，以及受控的已有表文件导入。服务不暴露任意写 SQL，也不包含迁移能
+力。
 
 - `list_connections`: 列出可用连接
 - `list_schemas`: 列出 PostgreSQL schema
-- `list_databases`: 列出 MySQL database
+- `list_databases`: 列出 MySQL 和 Hive database
 - `list_tables`: 列出表和视图
 - `describe_table`: 查看列和索引
-- `run_select`: 执行受限只读查询
+- `run_select`: 执行短时间、有明确上限的只读查询
+- `start_query`: 在 PostgreSQL、MySQL 和 Hive 上启动长时间运行的只读查询
+- `get_query`: 获取异步查询状态和分页结果
+- `cancel_query`: 取消运行中的异步查询
 - `explain_query`: 获取执行计划
 - `get_table_sample`: 抽样读取表数据
+- `import_table_file`: 将本地 CSV/XLSX 文件受控导入 PostgreSQL、MySQL 和
+  Hive 的已有表
 
 详细参数和返回结构见 `docs/api-reference.md`。
 
@@ -128,7 +136,7 @@ flowchart LR
 
 本文也明确列出当前版本刻意不做的事，避免误用。
 
-- 不提供写操作接口
+- 不暴露任意写 SQL；本地文件导入必须经过受限的已有表和表头校验
 - 不替代数据库自身权限管理
 - 不自动推断数据库引擎
 - 不把 `schema` 和 `database` 混成统一字段

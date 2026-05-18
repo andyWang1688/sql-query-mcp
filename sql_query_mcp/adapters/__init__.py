@@ -1,15 +1,7 @@
-"""Engine adapters for sql-query-mcp."""
+"""Database adapters."""
 
-__all__ = ["MySQLAdapter", "PostgresAdapter"]
+from .hive import HiveAdapter
+from .mysql import MySQLAdapter
+from .postgres import PostgresAdapter
 
-
-def __getattr__(name: str):
-    if name == "MySQLAdapter":
-        from .mysql import MySQLAdapter
-
-        return MySQLAdapter
-    if name == "PostgresAdapter":
-        from .postgres import PostgresAdapter
-
-        return PostgresAdapter
-    raise AttributeError(name)
+__all__ = ["HiveAdapter", "MySQLAdapter", "PostgresAdapter"]

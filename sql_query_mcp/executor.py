@@ -43,7 +43,9 @@ class QueryExecutor:
         try:
             config = self._registry.get_connection_config(connection_id)
             cleaned_sql = validate_select_sql(sql_text, config.engine)
-            limited_sql, _ = build_limited_query(cleaned_sql, row_limit)
+            limited_sql, _ = build_limited_query(
+                cleaned_sql, row_limit, engine=config.engine
+            )
             sql_summary = summarize_sql(cleaned_sql)
             with self._registry.connection_from_config(config) as (conn, adapter):
                 _apply_statement_timeout(
@@ -53,6 +55,8 @@ class QueryExecutor:
                     cur.execute(limited_sql)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
+                    if hasattr(adapter, "normalize_rows"):
+                        rows = adapter.normalize_rows(rows, columns)
 
                 truncated = len(rows) > row_limit
                 trimmed_rows = rows[:row_limit]
@@ -175,6 +179,8 @@ class QueryExecutor:
                     cur.execute(query)
                     columns = adapter.column_names(cur.description)
                     rows = cur.fetchall()
+                    if hasattr(adapter, "normalize_rows"):
+                        rows = adapter.normalize_rows(rows, columns)
 
                 truncated = len(rows) > row_limit
                 trimmed_rows = rows[:row_limit]
