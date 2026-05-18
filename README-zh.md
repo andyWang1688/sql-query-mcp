@@ -72,6 +72,9 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_quer
   调用记录审计日志。
 - `import_table_file` 不接受原始 SQL，只插入表头能精确匹配目标表字段的文件
   列。
+- Hive 的 `import_table_file` 只适合小文件，超过 1000 行数据会被拒绝。Hive
+  导入会按行写入，速度较慢，并受 MCP 客户端 tool 超时时间影响。批量数据导
+  入建议使用 Hive 原生的 `LOAD DATA`、外部表或已有的数据入湖链路。
 
 对 Hive 而言，`explain_query` 使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
 

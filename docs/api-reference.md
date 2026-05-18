@@ -443,6 +443,11 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 入。Hive 连接也暴露 `import_table_file`，并使用与 PostgreSQL 和 MySQL 相同
 的已有表导入路径和表头校验规则。
 
+Hive 导入只面向小文件，最多接受 1000 行数据。当前实现会按行写入 Hive，
+实际耗时会明显高于 PostgreSQL 和 MySQL，并受 MCP 客户端的 tool 超时时间影
+响。这个工具适合少量 CSV/XLSX 数据的临时导入或验证场景；批量数据导入建
+议使用 Hive 原生的 `LOAD DATA`、外部表或平台已有的数据入湖链路。
+
 Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hive 不接受
 `schema`。
 
@@ -464,6 +469,7 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 - Error: 文件表头为空、重复，或包含目标表不存在的字段时会被拒绝
 - Error: 文件没有数据行时会被拒绝
 - Error: XLSX 指定的 `sheet_name` 不存在时会被拒绝
+- Error: Hive 文件超过 1000 行数据时会被拒绝
 - Error: 数据库约束失败时返回脱敏后的数据库错误；PostgreSQL 和 MySQL 导入
   会回滚，Hive 使用当前 HiveServer2 连接可用的执行语义
 

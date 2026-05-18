@@ -82,6 +82,11 @@ The service keeps those boundaries explicit in a few ways.
   multi-statement input, and records audit logs for each call.
 - `import_table_file` doesn't accept raw SQL. It inserts only file columns whose
   headers exactly match existing table columns.
+- Hive `import_table_file` is intended for small files only and rejects files
+  with more than 1000 data rows. Hive imports write rows one by one, so they
+  can be slow and can hit your MCP client's tool timeout. For bulk Hive loads,
+  use Hive-native `LOAD DATA`, external tables, or your existing data ingestion
+  pipeline.
 
 For Hive, `explain_query` uses `EXPLAIN` and `EXPLAIN ANALYZE`.
 
