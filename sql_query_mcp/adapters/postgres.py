@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from uuid import uuid4
 from typing import Iterator, List
 
 try:
@@ -36,6 +37,19 @@ class PostgresAdapter:
     def set_statement_timeout(self, conn: object, timeout_ms: int) -> None:
         with conn.cursor() as cur:
             cur.execute("SELECT set_config('statement_timeout', %s, false)", (str(timeout_ms),))
+
+    @contextmanager
+    def export_cursor(self, conn: object) -> Iterator[object]:
+        previous_autocommit = getattr(conn, "autocommit", None)
+        if previous_autocommit is True:
+            conn.autocommit = False
+        try:
+            with conn.cursor(name=f"sql_query_mcp_export_{uuid4().hex}") as cur:
+                yield cur
+        finally:
+            if previous_autocommit is True:
+                conn.rollback()
+                conn.autocommit = True
 
     def list_schemas(self, conn: object) -> List[str]:
         with conn.cursor() as cur:
