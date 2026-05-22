@@ -102,8 +102,8 @@ flowchart LR
 ## 支持的能力
 
 当前版本聚焦在元数据查询、短时间有界只读查询、长时间异步只读查询、执行
-计划，以及受控的已有表文件导入。服务不暴露任意写 SQL，也不包含迁移能
-力。
+计划、PostgreSQL 和 MySQL 查询结果导出，以及受控的已有表文件导入。服务不
+暴露任意写 SQL，也不包含迁移能力。
 
 - `list_connections`: 列出可用连接
 - `list_schemas`: 列出 PostgreSQL schema
@@ -116,6 +116,8 @@ flowchart LR
 - `cancel_query`: 取消运行中的异步查询
 - `explain_query`: 获取执行计划
 - `get_table_sample`: 抽样读取表数据
+- `export_query_file`: 将 PostgreSQL 或 MySQL 只读查询结果分批导出为本地
+  CSV/XLSX 文件
 - `import_table_file`: 将本地 CSV/XLSX 文件受控导入 PostgreSQL、MySQL 和
   Hive 的已有表
 
@@ -141,6 +143,8 @@ flowchart LR
 - 不自动推断数据库引擎
 - 不把 `schema` 和 `database` 混成统一字段
 - 不支持复杂代理、连接编排或事务控制
+- 不把 `export_query_file` 做成报表系统；它不支持模板、样式、图表或多 sheet
+  导出
 
 ## Next steps
 

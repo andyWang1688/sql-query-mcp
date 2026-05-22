@@ -24,6 +24,13 @@ class AppTestCase(unittest.TestCase):
         self.assertIn("get_query", tool_names)
         self.assertIn("cancel_query", tool_names)
 
+    def test_create_app_registers_export_query_file_tool(self) -> None:
+        app = create_app()
+
+        tools = asyncio.run(app.list_tools())
+
+        self.assertIn("export_query_file", {tool.name for tool in tools})
+
 
 if __name__ == "__main__":
     unittest.main()

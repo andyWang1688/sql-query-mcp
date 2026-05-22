@@ -42,6 +42,11 @@ class MySQLAdapter:
         with conn.cursor() as cur:
             cur.execute("SET SESSION max_execution_time = %s", (int(timeout_ms),))
 
+    def export_cursor(self, conn: object):
+        if pymysql is None:
+            raise ConfigurationError("缺少 PyMySQL 依赖，请先安装项目依赖。")
+        return conn.cursor(pymysql.cursors.SSDictCursor)
+
     def list_databases(self, conn: object) -> List[str]:
         with conn.cursor() as cur:
             cur.execute(

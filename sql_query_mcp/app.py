@@ -11,6 +11,7 @@ from .audit import AuditLogger
 from .config import load_config
 from .errors import SqlQueryMCPError
 from .executor import QueryExecutor
+from .exporter import QueryExporter
 from .importer import TableFileImporter
 from .introspection import MetadataService
 from .registry import ConnectionRegistry
@@ -22,6 +23,7 @@ def create_app() -> FastMCP:
     audit_logger = AuditLogger(app_config.settings.audit_log_path)
     metadata = MetadataService(registry, app_config.settings, audit_logger)
     executor = QueryExecutor(registry, app_config.settings, audit_logger)
+    exporter = QueryExporter(registry, app_config.settings, audit_logger)
     importer = TableFileImporter(registry, app_config.settings, audit_logger)
     async_queries = AsyncQueryService(registry, app_config.settings, audit_logger)
 
@@ -89,6 +91,32 @@ def create_app() -> FastMCP:
         """Fetch a small sample from a table for schema discovery."""
 
         return _run_tool(lambda: executor.get_table_sample(connection_id, table_name, schema, database, limit))
+
+    @mcp.tool()
+    def export_query_file(
+        connection_id: str,
+        sql: str,
+        output_path: str,
+        format: str = "csv",
+        limit: Optional[int] = 1000,
+        export_all: bool = False,
+        file_name: Optional[str] = None,
+        overwrite: bool = False,
+    ) -> dict:
+        """Export a read-only query result to a local CSV or XLSX file."""
+
+        return _run_tool(
+            lambda: exporter.export_query_file(
+                connection_id,
+                sql,
+                output_path,
+                format,
+                limit,
+                export_all,
+                file_name,
+                overwrite,
+            )
+        )
 
     @mcp.tool()
     def start_query(connection_id: str, sql: str, limit: Optional[int] = None) -> dict:
