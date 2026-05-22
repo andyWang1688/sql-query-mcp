@@ -30,10 +30,11 @@ without exposing raw connection strings or flattening engine-specific concepts.
 ## What AI can do with it
 
 The current tool set focuses on database discovery, controlled query workflows,
-asynchronous read-only queries, and one narrow local file import path. You can
-use it to help an AI assistant understand structure before it generates SQL,
-runs a bounded query, starts a long-running read-only query, or imports a
-prepared CSV/XLSX file into an existing table.
+asynchronous read-only queries, batched query result exports, and one narrow
+local file import path. You can use it to help an AI assistant understand
+structure before it generates SQL, runs a bounded query, starts a long-running
+read-only query, exports PostgreSQL or MySQL results to a local file, or imports
+a prepared CSV/XLSX file into an existing table.
 
 MySQL and Hive support `explain_query`. Hive uses `EXPLAIN` and
 `EXPLAIN ANALYZE` for `explain_query`.
@@ -51,19 +52,22 @@ MySQL and Hive support `explain_query`. Hive uses `EXPLAIN` and
 | `cancel_query(query_id)` | Yes | Yes | Yes | Cancel running async queries |
 | `explain_query(connection_id, sql, analyze?)` | Yes | Yes | Yes | Inspect query plans |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | Yes | Yes | Yes | Fetch small table samples |
+| `export_query_file(connection_id, sql, output_path, format?, limit?, export_all?, file_name?, overwrite?)` | Yes | Yes | No | Export query results to local CSV/XLSX files |
 | `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | Yes | Yes | Yes | Import local CSV/XLSX files |
 
 These tools are useful for tasks such as listing namespaces, inspecting table
 definitions, reviewing indexes, sampling records, running short read-only
 queries with `run_select`, running long read-only queries with `start_query`,
 `get_query`, and `cancel_query`, analyzing read-only queries with `EXPLAIN`, and
-importing prepared local files. For full request and response details, see
+exporting PostgreSQL or MySQL query results to local CSV/XLSX files. You can
+also import prepared local files. For full request and response details, see
 `docs/api-reference.md` (Chinese).
 
 ## How boundaries are constrained
 
 The product boundary is intentionally narrow today. PostgreSQL, MySQL, and Hive
-are available today. Query tools remain read-only, and the only write path is a
+are available today. Query tools remain read-only, PostgreSQL and MySQL query
+results can be exported to local files, and the only database write path is a
 controlled local CSV/XLSX import into existing tables.
 
 The service keeps those boundaries explicit in a few ways.
@@ -80,6 +84,11 @@ The service keeps those boundaries explicit in a few ways.
   queries.
 - The server accepts only `SELECT` and `WITH ... SELECT`, rejects comments and
   multi-statement input, and records audit logs for each call.
+- `export_query_file` writes files on the MCP server machine. It is synchronous
+  but reads database rows and writes CSV/XLSX files in batches. Large exports can
+  still hit your MCP client's tool timeout. For XLSX output, UUID values are
+  written as text and timezone-aware datetime values are written without the
+  timezone. Hive export is not supported yet.
 - `import_table_file` doesn't accept raw SQL. It inserts only file columns whose
   headers exactly match existing table columns.
 - Hive `import_table_file` is intended for small files only and rejects files

@@ -26,10 +26,11 @@
 
 ## AI 能用它做什么
 
-当前这组工具主要面向数据库发现、受控查询流程、异步只读查询，以及一个边
-界很窄的本地文件导入入口。你可以用它帮助 AI 助手先理解结构，再生成 SQL、
-运行有明确上限的查询、启动长时间运行的只读查询，或把准备好的 CSV/XLSX
-文件导入到已有表。
+当前这组工具主要面向数据库发现、受控查询流程、异步只读查询、分批查询结
+果导出，以及一个边界很窄的本地文件导入入口。你可以用它帮助 AI 助手先理
+解结构，再生成 SQL、运行有明确上限的查询、启动长时间运行的只读查询、把
+PostgreSQL 或 MySQL 查询结果导出到本地文件，或把准备好的 CSV/XLSX 文件导
+入到已有表。
 
 MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_query`
 使用 `EXPLAIN` 和 `EXPLAIN ANALYZE`。
@@ -47,17 +48,20 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_quer
 | `cancel_query(query_id)` | 是 | 是 | 是 | 取消运行中的异步查询 |
 | `explain_query(connection_id, sql, analyze?)` | 是 | 是 | 是 | 查看查询计划 |
 | `get_table_sample(connection_id, table_name, schema?, database?, limit?)` | 是 | 是 | 是 | 获取小规模表样本 |
+| `export_query_file(connection_id, sql, output_path, format?, limit?, export_all?, file_name?, overwrite?)` | 是 | 是 | 否 | 导出查询结果到本地 CSV/XLSX 文件 |
 | `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)` | 是 | 是 | 是 | 导入本地 CSV/XLSX 文件 |
 
 这些工具适合用于列出命名空间、检查表定义、查看索引、采样记录、用
 `run_select` 运行短查询、用 `start_query`、`get_query` 和 `cancel_query`
-运行长时间只读查询、用 `EXPLAIN` 分析只读查询，以及导入准备好的本地文件。
-完整的请求和响应细节见 `docs/api-reference.md`。
+运行长时间只读查询、用 `EXPLAIN` 分析只读查询、把 PostgreSQL 或 MySQL 查
+询结果导出到本地 CSV/XLSX 文件，以及导入准备好的本地文件。完整的请求和响
+应细节见 `docs/api-reference.md`。
 
 ## 边界如何被清晰限定
 
 当前产品边界刻意保持得比较清晰。现在 PostgreSQL、MySQL 和 Hive 已经可用。
-查询工具仍然是只读的，唯一写入入口是受控的本地 CSV/XLSX 文件导入。
+查询工具仍然是只读的，PostgreSQL 和 MySQL 查询结果可以导出到本地文件，唯
+一数据库写入入口是受控的本地 CSV/XLSX 文件导入。
 
 服务通过以下几种方式明确这些边界。
 
@@ -70,6 +74,10 @@ MySQL 和 Hive 在当前实现中支持 `explain_query`。Hive 的 `explain_quer
   `get_query` 和 `cancel_query`。
 - 服务只接受 `SELECT` 和 `WITH ... SELECT`，拒绝注释和多语句输入，并为每次
   调用记录审计日志。
+- `export_query_file` 把文件写在 MCP server 本机。它是同步 tool，但会分批读
+  取数据库行并分批写入 CSV/XLSX 文件。大导出仍可能受 MCP 客户端 tool 超时
+  影响。XLSX 导出会把 UUID 写成文本，并把带 timezone 的 datetime 写成不带
+  timezone 的值。Hive 暂不支持导出。
 - `import_table_file` 不接受原始 SQL，只插入表头能精确匹配目标表字段的文件
   列。
 - Hive 的 `import_table_file` 只适合小文件，超过 1000 行数据会被拒绝。Hive

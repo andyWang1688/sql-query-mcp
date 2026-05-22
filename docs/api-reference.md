@@ -4,9 +4,9 @@
 tool 的适用范围、参数、返回结果和使用示例，用它来编写客户端提示词或核对
 接入测试。
 
-当前 API 一共暴露 12 个 tools，面向 AI 的多数据库发现、结构理解、受控查询
-流程和受控文件导入，并在明确边界内保留当前 API 中与 PostgreSQL、MySQL 和
-Hive 相关的实际行为差异。
+当前 API 一共暴露 13 个 tools，面向 AI 的多数据库发现、结构理解、受控查询
+流程、受控查询结果导出和受控文件导入，并在明确边界内保留当前 API 中与
+PostgreSQL、MySQL 和 Hive 相关的实际行为差异。
 
 ## 响应约定
 
@@ -21,6 +21,7 @@ Hive 相关的实际行为差异。
 | `engine` | 当前连接的数据库引擎 |
 | `duration_ms` | 执行耗时，部分工具返回 |
 | `row_count` | 返回记录数，查询类工具返回 |
+| `file_path` | MCP server 本机生成或读取的文件路径，文件类工具返回 |
 
 ## `list_connections()`
 
@@ -436,6 +437,67 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 }
 ```
 
+## `export_query_file(connection_id, sql, output_path, format?, limit?, export_all?, file_name?, overwrite?)`
+
+这个工具把一次 PostgreSQL 或 MySQL 只读查询的二维结果集导出为 MCP server 本
+机上的 CSV 或 XLSX 文件。它复用现有只读 SQL 校验，只接受 `SELECT` 或
+`WITH ... SELECT`，不支持 Hive，也不支持任意写 SQL。
+
+这个工具是同步 tool，但内部会用 `fetchmany()` 分批读取数据库结果，并分批写
+入最终文件，避免把完整结果集一次性放进内存。超大导出仍可能受 MCP 客户端
+tool 超时时间影响；需要导出全部结果时必须显式传 `export_all=true`。
+
+导出 XLSX 时，工具会把 UUID 值写成文本，并把带 timezone 的 `datetime` 或
+`time` 值转成不带 timezone 的值，避免 Excel 写入库拒绝这些 Python 类型。
+
+它只生成简单结果文件，不做报表模板、样式、图表、公式或多 sheet 导出。
+
+**Parameters:**
+
+| Name | Type | Required | Description |
+| --- | --- | --- | --- |
+| `connection_id` | string | Yes | PostgreSQL 或 MySQL 连接 ID |
+| `sql` | string | Yes | 只读 `SELECT` 或 `WITH ... SELECT` 查询 |
+| `output_path` | string | Yes | MCP server 本机可写入的目录或完整文件路径 |
+| `format` | string | No | 导出格式，支持 `csv` 或 `xlsx`；默认 `csv` |
+| `limit` | integer | No | `export_all=false` 时的导出行数上限；最终不会超过 `max_limit` |
+| `export_all` | boolean | No | 是否导出完整结果集；默认 `false` |
+| `file_name` | string | No | 当 `output_path` 是目录时使用的文件名 |
+| `overwrite` | boolean | No | 是否覆盖已存在文件；默认 `false` |
+
+**Response:**
+
+- `200`: 返回 `file_path`、`format`、`row_count`、`export_all`、`applied_limit`
+  和 `duration_ms`
+- Error: Hive 连接会被拒绝
+- Error: SQL 含注释、多语句、写操作或不合法语法时会被拒绝
+- Error: 只支持 `csv` 和 `xlsx` 格式
+- Error: `output_path` 的父目录不存在，或目录不可写时会失败
+- Error: XLSX 写入遇到不支持的值类型时，会返回错误列名和 Python 类型
+
+当 `output_path` 是目录且 `file_name` 为空时，工具使用 `export_<timestamp>` 作
+为默认文件名。当目标文件已存在且 `overwrite=false` 时，工具会自动生成
+`export (1).csv`、`export (2).csv` 这类不冲突文件名。查询结果为空时，工具仍
+会生成只有表头的文件。
+
+如果数据库查询或文件写入过程中失败，工具会返回脱敏错误并记录失败审计日
+志。失败时可能在磁盘上留下未完成文件，需要由调用方按自身策略清理。
+
+**Example:**
+
+```json
+{
+  "connection_id": "crm_mysql_prod_main_ro",
+  "engine": "mysql",
+  "file_path": "/tmp/exports/orders.csv",
+  "format": "csv",
+  "row_count": 1000,
+  "duration_ms": 318,
+  "export_all": false,
+  "applied_limit": 1000
+}
+```
+
 ## `import_table_file(connection_id, table_name, file_path, schema?, database?, sheet_name?)`
 
 这个工具把 MCP server 本机路径上的 CSV 或 XLSX 文件导入到已有表。它是受控
@@ -501,8 +563,9 @@ Hive 连接需要传 `database`，或在配置中设置 `default_database`。Hiv
 3. 然后调用 `list_tables()` 和 `describe_table()` 理解结构。
 4. 短查询调用 `run_select()`，长时间运行的只读查询调用 `start_query()`、
    `get_query()` 和必要时的 `cancel_query()`。
-5. 需要执行计划时调用 `explain_query()`，需要导入文件时调用
-   `import_table_file()`。
+5. 需要执行计划时调用 `explain_query()`，需要本地结果文件时调用
+   `export_query_file()`。
+6. 需要导入文件时调用 `import_table_file()`。
 
 ## Next steps
 
