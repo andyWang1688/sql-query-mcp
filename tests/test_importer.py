@@ -108,6 +108,14 @@ class _AdapterStub:
     def build_insert_query(self, namespace: str, table_name: str, columns):
         return f"insert {namespace}.{table_name} ({','.join(columns)})"
 
+    def normalize_identifier(self, value: str) -> str:
+        return value
+
+
+class _CaseInsensitiveAdapterStub(_AdapterStub):
+    def normalize_identifier(self, value: str) -> str:
+        return value.casefold()
+
 
 class _RegistryStub:
     def __init__(self, config: ConnectionConfig, adapter: object, conn: object) -> None:
@@ -160,6 +168,56 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual(2, records[0]["row_count"])
         self.assertEqual(".csv", records[0]["extra"]["file_extension"])
 
+    def test_mysql_import_csv_accepts_header_case_by_adapter_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(Path(temp_dir) / "users.csv", [["ID", "NAME"], ["1", "Alice"]])
+            conn = _ConnectionStub()
+            importer = _build_importer(
+                Path(temp_dir) / "audit.jsonl",
+                conn,
+                adapter=_CaseInsensitiveAdapterStub(),
+            )
+
+            result = importer.import_table_file(
+                "crm_mysql_prod_main_rw",
+                "users",
+                str(csv_path),
+            )
+
+        self.assertEqual(1, result["inserted_row_count"])
+        self.assertEqual(
+            [("insert crm.users (ID,NAME)", [("1", "Alice")])],
+            conn.cursor_stub.executed_many,
+        )
+
+    def test_mysql_import_csv_rejects_case_only_duplicate_header(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(Path(temp_dir) / "users.csv", [["id", "ID"], ["1", "2"]])
+            conn = _ConnectionStub()
+            importer = _build_importer(
+                Path(temp_dir) / "audit.jsonl",
+                conn,
+                adapter=_CaseInsensitiveAdapterStub(),
+            )
+
+            with self.assertRaises(QueryExecutionError) as caught:
+                importer.import_table_file("crm_mysql_prod_main_rw", "users", str(csv_path))
+
+        self.assertIn("重复字段", str(caught.exception))
+        self.assertEqual([], conn.cursor_stub.executed_many)
+
+    def test_postgres_import_csv_rejects_header_with_different_case(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(Path(temp_dir) / "users.csv", [["ID"], ["1"]])
+            conn = _ConnectionStub()
+            importer = _build_postgres_importer(Path(temp_dir) / "audit.jsonl", conn)
+
+            with self.assertRaises(QueryExecutionError) as caught:
+                importer.import_table_file("crm_postgres_prod_main_rw", "users", str(csv_path))
+
+        self.assertIn("不存在的字段", str(caught.exception))
+        self.assertEqual([], conn.cursor_stub.executed_many)
+
     def test_hive_import_csv_uses_existing_import_tool_path(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             csv_path = _write_csv(
@@ -180,6 +238,28 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual(1, result["inserted_row_count"])
         self.assertEqual(
             [("insert analytics.users (name,status)", ("Alice", "active"))],
+            conn.cursor_stub.executed,
+        )
+
+    def test_hive_import_csv_accepts_header_case_by_adapter_semantics(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            csv_path = _write_csv(Path(temp_dir) / "users.csv", [["NAME"], ["Alice"]])
+            conn = _HiveConnectionStub()
+            importer = _build_hive_importer(
+                Path(temp_dir) / "audit.jsonl",
+                conn,
+                adapter=_CaseInsensitiveAdapterStub(),
+            )
+
+            result = importer.import_table_file(
+                "warehouse_hive_prod_main_rw",
+                "users",
+                str(csv_path),
+            )
+
+        self.assertEqual(1, result["inserted_row_count"])
+        self.assertEqual(
+            [("insert analytics.users (NAME)", ("Alice",))],
             conn.cursor_stub.executed,
         )
 
@@ -384,7 +464,11 @@ class TableFileImporterTestCase(unittest.TestCase):
         self.assertEqual(0, conn.begin_calls)
 
 
-def _build_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
+def _build_importer(
+    log_path: Path,
+    conn: _ConnectionStub,
+    adapter: object | None = None,
+) -> TableFileImporter:
     config = ConnectionConfig(
         connection_id="crm_mysql_prod_main_rw",
         engine="mysql",
@@ -397,13 +481,36 @@ def _build_importer(log_path: Path, conn: _ConnectionStub) -> TableFileImporter:
         default_database="crm",
     )
     return TableFileImporter(
+        registry=_RegistryStub(config, adapter or _AdapterStub(), conn),
+        settings=ServerSettings(audit_log_path=log_path),
+        audit_logger=AuditLogger(log_path),
+    )
+
+
+def _build_postgres_importer(log_path: Path, conn: object) -> TableFileImporter:
+    config = ConnectionConfig(
+        connection_id="crm_postgres_prod_main_rw",
+        engine="postgres",
+        label="CRM PostgreSQL",
+        env="prod",
+        tenant="main",
+        role="rw",
+        dsn_env="PG_CONN",
+        enabled=True,
+        default_schema="public",
+    )
+    return TableFileImporter(
         registry=_RegistryStub(config, _AdapterStub(), conn),
         settings=ServerSettings(audit_log_path=log_path),
         audit_logger=AuditLogger(log_path),
     )
 
 
-def _build_hive_importer(log_path: Path, conn: object) -> TableFileImporter:
+def _build_hive_importer(
+    log_path: Path,
+    conn: object,
+    adapter: object | None = None,
+) -> TableFileImporter:
     config = ConnectionConfig(
         connection_id="warehouse_hive_prod_main_rw",
         engine="hive",
@@ -416,7 +523,7 @@ def _build_hive_importer(log_path: Path, conn: object) -> TableFileImporter:
         default_database="analytics",
     )
     return TableFileImporter(
-        registry=_RegistryStub(config, _AdapterStub(), conn),
+        registry=_RegistryStub(config, adapter or _AdapterStub(), conn),
         settings=ServerSettings(audit_log_path=log_path),
         audit_logger=AuditLogger(log_path),
     )
