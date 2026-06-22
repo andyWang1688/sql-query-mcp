@@ -68,7 +68,8 @@ class TableFileImporter:
                         f"未找到表 {namespace.value}.{table_name}，或当前用户没有访问权限"
                     )
                 table_columns = [item["column_name"] for item in description["columns"]]
-                _validate_headers(headers, table_columns)
+                normalize_identifier = getattr(adapter, "normalize_identifier", _exact_identifier)
+                _validate_headers(headers, table_columns, normalize_identifier)
                 query = adapter.build_insert_query(namespace.value, table_name, headers)
                 _execute_insert(conn, config.engine, query, rows)
 
@@ -170,18 +171,40 @@ def _normalize_row(row: Sequence[object], expected_length: int) -> Tuple[object,
     return tuple(None if value == "" else value for value in row)
 
 
-def _validate_headers(headers: Sequence[str], table_columns: Sequence[str]) -> None:
+def _validate_headers(
+    headers: Sequence[str],
+    table_columns: Sequence[str],
+    normalize_identifier=None,
+) -> None:
+    if normalize_identifier is None:
+        normalize_identifier = _exact_identifier
     if not headers:
         raise QueryExecutionError("文件表头不能为空。")
     empty_headers = [index + 1 for index, header in enumerate(headers) if not header]
     if empty_headers:
         raise QueryExecutionError(f"文件表头存在空字段，位置: {empty_headers}")
-    duplicates = sorted({header for header in headers if headers.count(header) > 1})
+    normalized_headers = [normalize_identifier(header) for header in headers]
+    duplicates = sorted(
+        {
+            header
+            for header, normalized in zip(headers, normalized_headers)
+            if normalized_headers.count(normalized) > 1
+        }
+    )
     if duplicates:
         raise QueryExecutionError(f"文件表头存在重复字段: {duplicates}")
-    unknown = sorted(set(headers) - set(table_columns))
+    normalized_table_columns = {normalize_identifier(column) for column in table_columns}
+    unknown = sorted(
+        header
+        for header, normalized in zip(headers, normalized_headers)
+        if normalized not in normalized_table_columns
+    )
     if unknown:
         raise QueryExecutionError(f"文件表头包含目标表不存在的字段: {unknown}")
+
+
+def _exact_identifier(value: str) -> str:
+    return value
 
 
 def _execute_insert(conn: Any, engine: str, query: object, rows: List[Tuple[object, ...]]) -> None:

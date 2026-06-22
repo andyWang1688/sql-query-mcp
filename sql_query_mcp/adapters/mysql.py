@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
-from typing import Iterator, List
+from typing import Any, Iterator, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 try:
@@ -57,7 +57,7 @@ class MySQLAdapter:
                 ORDER BY schema_name
                 """
             )
-            return [row["database_name"] for row in cur.fetchall()]
+            return [_row_value(row, "database_name") for row in cur.fetchall()]
 
     def list_tables(self, conn: object, database: str):
         with conn.cursor() as cur:
@@ -70,7 +70,14 @@ class MySQLAdapter:
                 """,
                 (database,),
             )
-            return cur.fetchall()
+            return [
+                {
+                    "database_name": _row_value(row, "database_name"),
+                    "table_name": _row_value(row, "table_name"),
+                    "table_type": _row_value(row, "table_type"),
+                }
+                for row in cur.fetchall()
+            ]
 
     def describe_table(self, conn: object, database: str, table_name: str):
         with conn.cursor() as cur:
@@ -101,13 +108,13 @@ class MySQLAdapter:
         return {
             "columns": [
                 {
-                    "column_name": row["column_name"],
-                    "data_type": row["column_type"],
+                    "column_name": _row_value(row, "column_name"),
+                    "data_type": _row_value(row, "column_type"),
                     "udt_name": None,
-                    "nullable": row["is_nullable"] == "YES",
-                    "default": row["column_default"],
-                    "primary_key": row["column_key"] == "PRI",
-                    "extra": row["extra"],
+                    "nullable": _row_value(row, "is_nullable") == "YES",
+                    "default": _row_value(row, "column_default"),
+                    "primary_key": _row_value(row, "column_key") == "PRI",
+                    "extra": _row_value(row, "extra"),
                 }
                 for row in columns
             ],
@@ -136,7 +143,7 @@ class MySQLAdapter:
     def extract_plan(self, rows):
         if not rows:
             return []
-        plan = rows[0].get("EXPLAIN", [])
+        plan = _row_value(rows[0], "EXPLAIN")
         if isinstance(plan, str):
             try:
                 return json.loads(plan)
@@ -146,6 +153,11 @@ class MySQLAdapter:
 
     def column_names(self, description) -> List[str]:
         return [column[0] for column in (description or [])]
+
+    def normalize_identifier(self, value: str) -> str:
+        # MySQL column names, index names, and column aliases are
+        # case-insensitive on every platform.
+        return value.casefold()
 
     def _parse_dsn(self, dsn: str) -> dict:
         parsed = urlparse(dsn)
@@ -169,16 +181,29 @@ class MySQLAdapter:
     def _normalize_indexes(self, rows: List[dict]) -> List[dict]:
         grouped = {}
         for row in rows:
-            index_name = row["index_name"]
+            index_name = _row_value(row, "index_name")
             item = grouped.setdefault(
                 index_name,
                 {
                     "index_name": index_name,
                     "columns": [],
-                    "unique": row["non_unique"] == 0,
+                    "unique": _row_value(row, "non_unique") == 0,
                     "primary_key": index_name == "PRIMARY",
                     "definition": None,
                 },
             )
-            item["columns"].append(row["column_name"])
+            item["columns"].append(_row_value(row, "column_name"))
         return [grouped[name] for name in sorted(grouped)]
+
+
+def _row_value(row: dict, key: str) -> Any:
+    # MySQL column names, index names, and column aliases are case-insensitive,
+    # and drivers may expose information_schema labels as COLUMN_NAME or
+    # column_name. Keep this normalization local to the MySQL adapter.
+    if key in row:
+        return row[key]
+    lowered_key = key.lower()
+    for existing_key, value in row.items():
+        if existing_key.lower() == lowered_key:
+            return value
+    raise KeyError(key)

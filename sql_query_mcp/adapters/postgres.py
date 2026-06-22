@@ -188,6 +188,11 @@ class PostgresAdapter:
     def column_names(self, description) -> List[str]:
         return [column.name for column in (description or [])]
 
+    def normalize_identifier(self, value: str) -> str:
+        # PostgreSQL quoted identifiers are case-sensitive, and this adapter
+        # quotes import columns with sql.Identifier, so header matching is exact.
+        return value
+
     def _get_pool(self, connection_id: str, dsn: str) -> ConnectionPool:
         if ConnectionPool is None or dict_row is None:
             raise ConfigurationError("缺少 psycopg / psycopg-pool 依赖，请先安装项目依赖。")
