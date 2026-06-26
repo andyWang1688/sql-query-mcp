@@ -40,6 +40,32 @@ class _HiveConnectionStub:
         return self.cursor_stub
 
 
+class _MySQLCursorStub:
+    def __init__(self, result_sets) -> None:
+        self._result_sets = list(result_sets)
+        self.executed = []
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc, tb) -> None:
+        return None
+
+    def execute(self, sql: str, params=None) -> None:
+        self.executed.append((sql, params))
+
+    def fetchall(self):
+        return self._result_sets.pop(0)
+
+
+class _MySQLConnectionStub:
+    def __init__(self, result_sets) -> None:
+        self.cursor_stub = _MySQLCursorStub(result_sets)
+
+    def cursor(self) -> _MySQLCursorStub:
+        return self.cursor_stub
+
+
 class ValidatorTestCase(unittest.TestCase):
     def test_accepts_plain_select(self) -> None:
         self.assertEqual("SELECT 1", validate_select_sql("SELECT 1;", "postgres"))
@@ -253,11 +279,134 @@ class ValidatorTestCase(unittest.TestCase):
         )
         self.assertEqual([], description["indexes"])
 
+    def test_hive_describe_table_reads_dict_keys_case_insensitively(self) -> None:
+        conn = _HiveConnectionStub(
+            [
+                {
+                    "COMMENT": "customer identifier",
+                    "DATA_TYPE": "int",
+                    "COL_NAME": "id",
+                }
+            ]
+        )
+
+        description = HiveAdapter().describe_table(conn, "analytics", "orders")
+
+        self.assertEqual(
+            [
+                {
+                    "column_name": "id",
+                    "data_type": "int",
+                    "udt_name": None,
+                    "nullable": True,
+                    "default": None,
+                    "primary_key": False,
+                    "extra": "customer identifier",
+                    "partition_key": False,
+                }
+            ],
+            description["columns"],
+        )
+
     def test_mysql_explain_plan_is_parsed_to_structured_json(self) -> None:
         plan = MySQLAdapter().extract_plan(
             [{"EXPLAIN": json.dumps({"query_block": {"select_id": 1}})}]
         )
         self.assertEqual({"query_block": {"select_id": 1}}, plan)
+
+    def test_mysql_explain_plan_reads_label_case_insensitively(self) -> None:
+        plan = MySQLAdapter().extract_plan(
+            [{"explain": json.dumps({"query_block": {"select_id": 1}})}]
+        )
+
+        self.assertEqual({"query_block": {"select_id": 1}}, plan)
+
+    def test_mysql_list_databases_reads_row_keys_case_insensitively(self) -> None:
+        conn = _MySQLConnectionStub([[{"DATABASE_NAME": "crm"}]])
+
+        databases = MySQLAdapter().list_databases(conn)
+
+        self.assertEqual(["crm"], databases)
+
+    def test_mysql_list_tables_returns_normalized_rows(self) -> None:
+        conn = _MySQLConnectionStub(
+            [
+                [
+                    {
+                        "DATABASE_NAME": "crm",
+                        "TABLE_NAME": "orders",
+                        "TABLE_TYPE": "BASE TABLE",
+                    }
+                ]
+            ]
+        )
+
+        tables = MySQLAdapter().list_tables(conn, "crm")
+
+        self.assertEqual(
+            [
+                {
+                    "database_name": "crm",
+                    "table_name": "orders",
+                    "table_type": "BASE TABLE",
+                }
+            ],
+            tables,
+        )
+
+    def test_mysql_describe_table_reads_metadata_keys_case_insensitively(self) -> None:
+        conn = _MySQLConnectionStub(
+            [
+                [
+                    {
+                        "COLUMN_NAME": "id",
+                        "COLUMN_TYPE": "bigint",
+                        "IS_NULLABLE": "NO",
+                        "COLUMN_DEFAULT": None,
+                        "EXTRA": "auto_increment",
+                        "COLUMN_KEY": "PRI",
+                        "ORDINAL_POSITION": 1,
+                    }
+                ],
+                [
+                    {
+                        "INDEX_NAME": "PRIMARY",
+                        "NON_UNIQUE": 0,
+                        "SEQ_IN_INDEX": 1,
+                        "COLUMN_NAME": "id",
+                    }
+                ],
+            ]
+        )
+
+        description = MySQLAdapter().describe_table(conn, "crm", "orders")
+
+        self.assertEqual(
+            [
+                {
+                    "column_name": "id",
+                    "data_type": "bigint",
+                    "udt_name": None,
+                    "nullable": False,
+                    "default": None,
+                    "primary_key": True,
+                    "extra": "auto_increment",
+                }
+            ],
+            description["columns"],
+        )
+        self.assertEqual(
+            [
+                {
+                    "index_name": "PRIMARY",
+                    "columns": ["id"],
+                    "unique": True,
+                    "primary_key": True,
+                    "definition": None,
+                }
+            ],
+            description["indexes"],
+        )
 
     def test_postgres_build_insert_query_quotes_identifiers(self) -> None:
         query = PostgresAdapter().build_insert_query(

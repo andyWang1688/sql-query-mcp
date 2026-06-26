@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from typing import Iterator, List
+from typing import Any, Iterator, List
 from urllib.parse import parse_qs, unquote, urlparse
 
 try:
@@ -52,6 +52,10 @@ class HiveAdapter:
     def column_names(self, description) -> List[str]:
         return [column[0] for column in (description or [])]
 
+    def normalize_identifier(self, value: str) -> str:
+        # Hive table and column identifiers are case-insensitive.
+        return value.casefold()
+
     def normalize_rows(self, rows, columns: List[str]) -> List[dict]:
         return [dict(zip(columns, row)) for row in rows]
 
@@ -80,7 +84,7 @@ class HiveAdapter:
         columns = []
         in_partitions = False
         for row in rows:
-            name = self._first_value(row)
+            name = self._describe_value(row, "col_name", 0)
             if not name:
                 continue
             if str(name).startswith("# Partition Information"):
@@ -88,9 +92,8 @@ class HiveAdapter:
                 continue
             if str(name).startswith("#"):
                 continue
-            values = self._row_values(row)
-            data_type = values[1] if len(values) > 1 else None
-            comment = values[2] if len(values) > 2 else None
+            data_type = self._describe_value(row, "data_type", 1)
+            comment = self._describe_value(row, "comment", 2)
             columns.append(
                 {
                     "column_name": name,
@@ -141,7 +144,13 @@ class HiveAdapter:
             return next(iter(row.values()))
         return row[0]
 
-    def _row_values(self, row):
-        if isinstance(row, dict):
-            return list(row.values())
-        return list(row)
+    def _describe_value(self, row, key: str, index: int) -> Any:
+        # Hive table and column identifiers are case-insensitive. DESCRIBE may
+        # return tuples or dict rows, so dict key lookup follows Hive semantics.
+        if not isinstance(row, dict):
+            return row[index] if len(row) > index else None
+        lowered_key = key.lower()
+        for existing_key, value in row.items():
+            if existing_key.lower() == lowered_key:
+                return value
+        return None
