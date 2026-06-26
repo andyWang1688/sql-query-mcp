@@ -37,6 +37,28 @@ records audit logs for each request.
 - The adapter must preserve current engine-specific behavior instead of forcing
   a fake universal namespace model.
 
+## Identifier case handling
+
+Each adapter owns identifier and result-column case handling because the rules
+come from the database engine and its Python driver. The service layer must not
+apply one global normalization rule to every engine.
+
+- PostgreSQL folds unquoted identifiers to lower case, and quoted identifiers
+  are case-sensitive. The PostgreSQL adapter keeps exact result labels and uses
+  explicit lower-case aliases in metadata queries.
+- MySQL treats column names, index names, and column aliases as
+  case-insensitive. The MySQL adapter reads metadata result keys with
+  case-insensitive lookup because drivers can expose labels such as
+  `column_name` or `COLUMN_NAME` for the same `information_schema` field.
+- Hive table and column names are case-insensitive. The Hive adapter keeps
+  tuple-based `DESCRIBE` handling when drivers return positional rows, and uses
+  case-insensitive lookup only when drivers return dict rows.
+
+Keep this behavior inside the adapter that talks to the database. A new adapter
+must document whether its identifiers are case-sensitive, folded, or
+case-insensitive, and then normalize only the driver result shapes required by
+that engine.
+
 ## Adapter API you need to implement
 
 Before you start a candidate adapter, study the practical method surface that
@@ -59,6 +81,7 @@ The current adapter API includes the following members.
 | `build_explain_query(sql_text, analyze=False)` | `sql_query_mcp/executor.py` | Wrap a validated read-only query in the engine's `EXPLAIN` form and reject unsupported options when needed. |
 | `extract_plan(rows)` | `sql_query_mcp/executor.py` | Convert raw `EXPLAIN` rows into the `plan` value returned by the tool. |
 | `column_names(description)` | `sql_query_mcp/executor.py` | Normalize cursor description output into a list of column names. |
+| `normalize_identifier(value)` | `sql_query_mcp/importer.py` | Normalize table-file import headers for duplicate and unknown-column checks according to the engine's identifier case rules. |
 
 ## What contributors need to implement
 
